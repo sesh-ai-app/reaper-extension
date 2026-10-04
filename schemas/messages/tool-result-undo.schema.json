@@ -1,0 +1,24 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/tool-result-undo.schema.json",
+	"title": "Tool Result Undo Report",
+	"description": "The undo reporting fields the REAPER extension includes in the payload of a response:* envelope for a mutating constrained tool. The extension captures the undo stack position before it applies its change and reports it as undoPositionBefore; the MCP Tool Server records that value as the agent turn's undo position marker so the chat UI can offer \"revert all AI changes\" (ADR-0015). Tools that leave the undo stack untouched omit both fields. Tool-specific result fields sit alongside these, which is why additional properties are allowed.",
+	"type": "object",
+	"properties": {
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	},
+	"required": [
+		"undoPositionBefore"
+	],
+	"additionalProperties": true
+}

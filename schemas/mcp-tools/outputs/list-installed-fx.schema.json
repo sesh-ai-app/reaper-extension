@@ -1,0 +1,86 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/list-installed-fx.schema.json",
+	"title": "list_installed_fx result",
+	"description": "What list_installed_fx returns: the FX on this machine matching the search term. The identifier is the only field add_fx and create_bus accept, and it must come from a result like this one — an invented identifier names a plugin the producer does not own. An empty match list is a real answer meaning the plugin is not installed, and the agent should say so rather than substituting something that sounds similar. A read tool, so no undo report.",
+	"type": "object",
+	"properties": {
+		"matches": {
+			"type": "array",
+			"description": "Matching FX, best match first. Empty when nothing matched, which is a complete answer rather than a failure.",
+			"items": {
+				"$ref": "#/definitions/installedFx"
+			},
+			"maxItems": 100
+		},
+		"totalInRange": {
+			"$ref": "#/definitions/totalInRange"
+		},
+		"truncated": {
+			"$ref": "#/definitions/truncated"
+		}
+	},
+	"required": [
+		"matches",
+		"totalInRange",
+		"truncated"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"installedFx": {
+			"type": "object",
+			"description": "One installed FX. The identifier and the display name are separate fields because REAPER's identifier carries the format prefix a producer never says — they ask for \"Pro-Q\", the tool needs \"VST3: FabFilter Pro-Q 3\".",
+			"properties": {
+				"identifier": {
+					"type": "string",
+					"description": "The identifier to pass to add_fx or create_bus, exactly as returned. Not to be reconstructed or tidied: the prefix and spacing are part of how REAPER resolves it.",
+					"minLength": 1,
+					"maxLength": 512
+				},
+				"name": {
+					"type": "string",
+					"description": "The plugin's own name, which is what to call it when talking to the producer.",
+					"minLength": 1,
+					"maxLength": 512
+				},
+				"vendor": {
+					"type": "string",
+					"description": "Plugin vendor, when REAPER reports one. Useful for distinguishing two compressors that share a name.",
+					"maxLength": 256
+				},
+				"format": {
+					"type": "string",
+					"description": "Plugin format, so a producer asking why an FX will not load on a particular track can be told what kind it is.",
+					"enum": [
+						"vst",
+						"vst3",
+						"au",
+						"clap",
+						"js",
+						"lv2",
+						"dx",
+						"unknown"
+					]
+				},
+				"instrument": {
+					"type": "boolean",
+					"description": "True when the FX is an instrument rather than an effect. An instrument placed mid-chain replaces the signal rather than processing it, so the distinction changes where it belongs."
+				}
+			},
+			"required": [
+				"identifier",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"totalInRange": {
+			"type": "integer",
+			"description": "How many entries matched the call's filters before maximumResults capped the returned list. Equal to the length of the returned array when nothing was capped. Carried so that a capped read is visible to the agent rather than a silent truncation it reasons over as if it were the whole set (Requirement 23.9).",
+			"minimum": 0
+		},
+		"truncated": {
+			"type": "boolean",
+			"description": "True when totalInRange exceeds the number of entries returned. Stated rather than left to be inferred from comparing two numbers, so the agent has to notice it before telling the producer the list is complete."
+		}
+	}
+}

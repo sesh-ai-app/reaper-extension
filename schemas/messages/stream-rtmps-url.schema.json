@@ -1,0 +1,50 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/stream-rtmps-url.schema.json",
+	"title": "Stream RTMPS Url",
+	"description": "Payload of the stream:rtmps_url envelope. Carries the IVS Real-Time RTMPS ingest endpoint and the publish participant token the REAPER extension needs to configure ReaCast, plus the token expiry so the extension can show the producer when a fresh one arrives.",
+	"type": "object",
+	"properties": {
+		"stageArn": {
+			"type": "string",
+			"description": "ARN of the IVS Real-Time stage the extension publishes into.",
+			"minLength": 1,
+			"maxLength": 256
+		},
+		"rtmpsIngestUrl": {
+			"type": "string",
+			"description": "RTMPS ingest endpoint from the CreateStage response, entered into ReaCast's destination field by the producer.",
+			"minLength": 1,
+			"maxLength": 2048
+		},
+		"streamKey": {
+			"type": "string",
+			"description": "Publish participant token, used as the ReaCast stream key. Treated as a credential: never logged.",
+			"minLength": 1
+		},
+		"participantId": {
+			"type": "string",
+			"description": "Identifier IVS assigned to the publishing participant, safe to log and to correlate with stage events.",
+			"minLength": 1,
+			"maxLength": 128
+		},
+		"expiresAt": {
+			"type": "string",
+			"description": "ISO-8601 timestamp the publish token expires at.",
+			"format": "date-time"
+		},
+		"reissued": {
+			"type": "boolean",
+			"description": "True when this token replaces an earlier one — a reconnect or a proactive renewal rather than a first issue."
+		}
+	},
+	"required": [
+		"stageArn",
+		"rtmpsIngestUrl",
+		"streamKey",
+		"participantId",
+		"expiresAt",
+		"reissued"
+	],
+	"additionalProperties": false
+}

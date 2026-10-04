@@ -1,0 +1,58 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/confirm-resolved.schema.json",
+	"title": "Confirmation Resolution Broadcast",
+	"description": "Payload of the confirm:resolved envelope. The server broadcasts this to every client in the session as soon as a pending destructive-operation confirmation stops being pending — because one client answered it, or because the 120-second window closed server-side. The client that answered already knows and ignores it; the other client dismisses its prompt rather than leaving it stranded (Requirement 13.5). The requestId correlating this to the original confirm:request rides on the envelope as well; it is repeated here so a payload handed to the Confirmation_Coordinator on its own is still self-describing.",
+	"type": "object",
+	"properties": {
+		"requestId": {
+			"type": "string",
+			"description": "Correlation identifier of the confirm:request this resolves. Matches the requestId the answering client echoed on its confirm:approve or confirm:reject.",
+			"minLength": 1,
+			"maxLength": 128
+		},
+		"decision": {
+			"type": "string",
+			"description": "How the confirmation ended. approved and rejected come from a producer answering on one of their clients; expired means the server's 120-second window closed with no answer.",
+			"enum": [
+				"approved",
+				"rejected",
+				"expired"
+			]
+		},
+		"answeringClient": {
+			"type": "string",
+			"description": "Which of the producer's clients answered, so the other one can say so rather than just dismissing the prompt. Absent when the decision is expired, because nothing answered.",
+			"enum": [
+				"extension",
+				"pwa"
+			]
+		}
+	},
+	"required": [
+		"requestId",
+		"decision"
+	],
+	"additionalProperties": false,
+	"if": {
+		"properties": {
+			"decision": {
+				"const": "expired"
+			}
+		},
+		"required": [
+			"decision"
+		]
+	},
+	"then": {
+		"properties": {
+			"answeringClient": false
+		}
+	},
+	"else": {
+		"required": [
+			"answeringClient"
+		]
+	},
+	"$comment": "answeringClient is tied to decision rather than left plainly optional so the two cannot come apart: an approved resolution that does not say who approved leaves the other client unable to explain the dismissal, and an expired resolution naming an answering client is a contradiction. Same reasoning as the success split in tool-result-partial.schema.json."
+}

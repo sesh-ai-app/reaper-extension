@@ -1,0 +1,44 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/script-download.schema.json",
+	"title": "Generated ReaScript Download",
+	"description": "Payload of the script:download envelope. The server writes the Lua the agent generated to the S3 uploads bucket (24-hour lifecycle) and sends the short-lived signed URL here; the extension fetches it over HTTPS and presents it to the producer as a file to download. It is a download, never an execution — the producer reads and runs the script themselves in REAPER's own script editor (ADR 0011, Requirement 26.2). Nothing in this payload instructs REAPER to run anything, and the extension must not treat it as if it did.",
+	"type": "object",
+	"properties": {
+		"downloadUrl": {
+			"type": "string",
+			"description": "Short-lived signed S3 URL for the generated .lua file. Treated as a credential — anyone holding it can read the object until it expires, so it is never logged.",
+			"minLength": 1,
+			"maxLength": 2048
+		},
+		"fileName": {
+			"type": "string",
+			"description": "Suggested file name for the download, always ending in .lua. The producer saves this into REAPER's Scripts directory if they want to keep it as an action.",
+			"pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]*\\.lua$",
+			"maxLength": 255
+		},
+		"sizeBytes": {
+			"type": "integer",
+			"description": "Size of the generated script in bytes, so the UI can label the download and the extension can reject a response body that does not match what it was promised.",
+			"minimum": 1
+		},
+		"expiresAt": {
+			"type": "string",
+			"description": "ISO-8601 timestamp the signed URL stops working at. The UI shows the download as stale past this point rather than offering a fetch that will fail.",
+			"format": "date-time"
+		},
+		"description": {
+			"type": "string",
+			"description": "One-line summary of what the script does, shown beside the download. Optional: the agent's streamed response usually explains the script already, and a second summary is not always produced.",
+			"minLength": 1,
+			"maxLength": 1024
+		}
+	},
+	"required": [
+		"downloadUrl",
+		"fileName",
+		"sizeBytes",
+		"expiresAt"
+	],
+	"additionalProperties": false
+}

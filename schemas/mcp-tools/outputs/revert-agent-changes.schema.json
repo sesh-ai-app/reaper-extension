@@ -1,0 +1,54 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/revert-agent-changes.schema.json",
+	"title": "revert_agent_changes result",
+	"description": "What revert_agent_changes returns: everything that was undone, in the order it was undone, using REAPER's own descriptions. The turn's undo position marker is reported alongside the position the stack actually reached, because the two agreeing is the evidence the revert completed rather than stopping partway. A rewinding tool, so it carries no undoPositionBefore — recording a marker for an undo would point past the producer's own work (Requirement 10.7). A revert that would have crossed a foreign undo entry does not produce this result at all: it is refused with the producer's edits named, and nothing is undone.",
+	"type": "object",
+	"properties": {
+		"revertedEntryCount": {
+			"type": "integer",
+			"description": "How many undo entries were reverted. Zero when the turn had made no changes to walk back, which is a complete answer and not a failure.",
+			"minimum": 0
+		},
+		"undoneEntryDescriptions": {
+			"$ref": "#/definitions/undoneEntryDescriptions"
+		},
+		"undoPositionMarker": {
+			"type": "integer",
+			"description": "The turn's undo position marker — the stack position captured before its first mutating tool ran, which is the target the revert walked back to.",
+			"minimum": 0
+		},
+		"undoStackPositionAfter": {
+			"$ref": "#/definitions/undoStackPositionAfter"
+		},
+		"revertedForeignEntries": {
+			"type": "boolean",
+			"description": "Whether any of the reverted entries were the producer's own rather than the agent's. Only ever true when a refusal named those edits and the producer confirmed they should be undone too, so this is the record of an authorised revert past someone's work — not something that happens by default."
+		}
+	},
+	"required": [
+		"revertedEntryCount",
+		"undoneEntryDescriptions",
+		"undoPositionMarker",
+		"undoStackPositionAfter",
+		"revertedForeignEntries"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"undoneEntryDescriptions": {
+			"type": "array",
+			"description": "REAPER's own descriptions of the undo entries that were reverted, in the order they were undone. REAPER's wording rather than the extension's, so what the producer is told matches what they would have seen in REAPER's undo history.",
+			"items": {
+				"type": "string",
+				"minLength": 1,
+				"maxLength": 512
+			},
+			"maxItems": 1024
+		},
+		"undoStackPositionAfter": {
+			"type": "integer",
+			"description": "REAPER undo stack position after a rewinding tool walked the stack backwards. Reported instead of undoPositionBefore, which a rewinding tool must never carry: undoPositionBefore is the marker \"revert all\" walks back to, and recording one for an undo would point at a position after the producer's own work (Requirement 10.7).",
+			"minimum": 0
+		}
+	}
+}

@@ -1,0 +1,224 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/create-bus.schema.json",
+	"title": "create_bus result",
+	"description": "What create_bus returns: the new bus track and the mechanism that was actually built, because REAPER has no bus object and the two types are different structures. A summing bus is a folder parent above the sources, so its result carries folder depth repairs and no sends. An aux bus is a track fed by sends, so its result carries one send per source and leaves the sources going where they already went. The type is echoed so the agent describes the mechanism it got rather than the metaphor the producer used. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"busTrack": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"type": {
+			"type": "string",
+			"description": "Which mechanism was built. `summing` folded the sources into a folder whose parent sums them; `aux` added a return track the sources send to. Converting one into the other afterwards is not a small change, so this is the field to check before describing the result.",
+			"enum": [
+				"summing",
+				"aux"
+			]
+		},
+		"index": {
+			"type": "integer",
+			"description": "Zero-based position the bus track took in the project's track order. For a summing bus this is immediately above the first source, since a folder parent must precede its children.",
+			"minimum": 0
+		},
+		"sourceTracks": {
+			"$ref": "#/definitions/trackReferences"
+		},
+		"fx": {
+			"type": "array",
+			"description": "The FX placed on the new bus, in chain order, with the index each took. Empty when the call asked for none. Indexed so a level or parameter on the shared effect can be adjusted without a further read.",
+			"items": {
+				"$ref": "#/definitions/fxEntry"
+			},
+			"maxItems": 32
+		},
+		"sends": {
+			"type": "array",
+			"description": "The sends created into the bus, one per source track, each with the index it took on its own source. Present and non-empty for an aux bus; empty for a summing bus, which carries signal through folder summing rather than through sends and so appears in no send enumeration at all.",
+			"items": {
+				"$ref": "#/definitions/createdSend"
+			},
+			"maxItems": 512
+		},
+		"folderDepthRepairs": {
+			"$ref": "#/definitions/folderDepthRepairs"
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"busTrack",
+		"type",
+		"index",
+		"sourceTracks",
+		"fx",
+		"sends",
+		"folderDepthRepairs",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"createdSend": {
+			"type": "object",
+			"description": "One send created from a source track into the new aux bus. The index is on the source track, not the bus, because that is where REAPER stores it and where set_send_state addresses it.",
+			"properties": {
+				"sourceTrackGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"sendIndex": {
+					"type": "integer",
+					"description": "Index the send took on that source track.",
+					"minimum": 0
+				},
+				"volume": {
+					"$ref": "#/definitions/volumeDecibels"
+				},
+				"mode": {
+					"$ref": "#/definitions/sendMode"
+				}
+			},
+			"required": [
+				"sourceTrackGuid",
+				"sendIndex",
+				"volume",
+				"mode"
+			],
+			"additionalProperties": false
+		},
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"trackReferences": {
+			"type": "array",
+			"description": "The tracks a single shared operation was applied to, in the order the call supplied them. Every selector resolved, since an unresolved or ambiguous one refuses the whole call rather than partially applying it.",
+			"items": {
+				"$ref": "#/definitions/trackReference"
+			},
+			"minItems": 1,
+			"maxItems": 512
+		},
+		"fxEntry": {
+			"type": "object",
+			"description": "One FX on a track's chain. Chain position changes the sound, so the index is part of the identity rather than presentation detail.",
+			"properties": {
+				"index": {
+					"type": "integer",
+					"description": "Zero-based position on the chain, which is how every FX tool addresses it.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "FX name as REAPER reports it on the chain.",
+					"minLength": 1,
+					"maxLength": 512
+				},
+				"bypassed": {
+					"type": "boolean",
+					"description": "Whether the FX is bypassed. A bypassed FX keeps its settings, so this is what distinguishes \"not being heard\" from \"not there\"."
+				},
+				"offline": {
+					"type": "boolean",
+					"description": "Whether the FX is offline. An offline FX is neither processing nor loaded, which is why a parameter read against it returns nothing useful."
+				}
+			},
+			"required": [
+				"index",
+				"name",
+				"bypassed"
+			],
+			"additionalProperties": false
+		},
+		"folderDepthRepairs": {
+			"type": "array",
+			"description": "Every track whose folder depth delta was repaired as a consequence of this call. Empty when the structure needed no repair, and required rather than optional on the tools that can disturb structure: an absent array and an empty one would otherwise be indistinguishable from \"the extension did not check\".",
+			"items": {
+				"$ref": "#/definitions/folderDepthRepair"
+			},
+			"maxItems": 4096
+		},
+		"folderDepthRepair": {
+			"type": "object",
+			"description": "One track whose folder depth delta the Folder Invariant Keeper changed to keep the structure valid, other than because the call asked for it. REAPER encodes nesting as a delta per track with no parent pointer, so inserting, deleting, or reordering a track can invalidate the structure of tracks the operation never named (Requirement 11.1). Reported so that a structural side effect is something the agent can tell the producer about rather than something they discover later.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER.",
+					"maxLength": 512
+				},
+				"previousFolderDepth": {
+					"type": "integer",
+					"description": "The track's I_FOLDERDEPTH delta before the repair.",
+					"minimum": -64,
+					"maximum": 1
+				},
+				"folderDepth": {
+					"type": "integer",
+					"description": "The track's I_FOLDERDEPTH delta after the repair.",
+					"minimum": -64,
+					"maximum": 1
+				}
+			},
+			"required": [
+				"guid",
+				"name",
+				"previousFolderDepth",
+				"folderDepth"
+			],
+			"additionalProperties": false
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		},
+		"volumeDecibels": {
+			"type": "number",
+			"description": "Fader level in decibels, where 0 is unity. Same range the input definitions accept, so a level read back can be written back.",
+			"minimum": -150,
+			"maximum": 12
+		},
+		"sendMode": {
+			"type": "string",
+			"description": "Where in the source track's signal chain the send is taken from.",
+			"enum": [
+				"post_fader",
+				"pre_fx",
+				"post_fx"
+			]
+		}
+	}
+}

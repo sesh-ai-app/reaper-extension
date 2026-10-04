@@ -1,0 +1,90 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/move-all-items.schema.json",
+	"title": "move_all_items result",
+	"description": "What move_all_items returns: how much of the session moved. The items are counted rather than enumerated — this tool shifts whole tracks and a project-wide call would return thousands of GUIDs the agent has no use for, where the count and the affected tracks are what the producer needs to hear. clampedItemCount is the field that matters most: items are never moved before zero, so a negative offset can collapse the start of the arrangement while the rest shifts cleanly. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"tracks": {
+			"$ref": "#/definitions/trackReferences"
+		},
+		"wholeProject": {
+			"type": "boolean",
+			"description": "True when the call named no tracks and every track was shifted. tracks is absent in that case rather than listing the whole session back, and this flag is what the agent needs to describe the scope honestly."
+		},
+		"movedItemCount": {
+			"type": "integer",
+			"description": "How many media items were shifted.",
+			"minimum": 0
+		},
+		"appliedOffsetSeconds": {
+			"type": "number",
+			"description": "The offset applied along the timeline. Positive moves items later, negative earlier."
+		},
+		"clampedItemCount": {
+			"type": "integer",
+			"description": "How many items were held at position zero instead of moving the full offset. Non-zero means the arrangement's internal timing has changed, not just its position, so this is a consequence to report rather than absorb.",
+			"minimum": 0
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"wholeProject",
+		"movedItemCount",
+		"appliedOffsetSeconds",
+		"clampedItemCount",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReferences": {
+			"type": "array",
+			"description": "The tracks a single shared operation was applied to, in the order the call supplied them. Every selector resolved, since an unresolved or ambiguous one refuses the whole call rather than partially applying it.",
+			"items": {
+				"$ref": "#/definitions/trackReference"
+			},
+			"minItems": 1,
+			"maxItems": 512
+		},
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

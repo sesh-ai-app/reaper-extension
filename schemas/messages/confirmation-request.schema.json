@@ -1,0 +1,36 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/confirmation-request.schema.json",
+	"title": "Destructive Tool Confirmation Request",
+	"description": "Payload of a confirm:* envelope. Carries the user_confirmation inline function arguments produced by the AgentCore harness when it pauses for producer approval of a destructive operation. Field names are snake_case to match the harness inline function input schema. Deliberately has no structured field for the blocking entities of a precondition refusal: this payload is authored by the model as inline function arguments rather than assembled by the server, so a structured list would have to be transcribed out of the refusal result by the model — a new place for an entity to be dropped or invented — and the field would have to be added to this schema and to the harness's own input schema in lockstep, both of which are closed. The agent enumerates the colliding files or foreign undo entries in details instead, which is prose it has to write for the producer regardless.",
+	"type": "object",
+	"properties": {
+		"action_summary": {
+			"type": "string",
+			"description": "One-line plain-language description of what the agent is about to do, shown to the producer.",
+			"minLength": 1,
+			"maxLength": 1024
+		},
+		"risk_level": {
+			"type": "string",
+			"description": "How damaging the operation would be if unintended.",
+			"enum": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"details": {
+			"type": "string",
+			"description": "Longer explanation of the operation, including which tracks, items, or files are affected.",
+			"minLength": 1,
+			"maxLength": 8192
+		}
+	},
+	"required": [
+		"action_summary",
+		"risk_level",
+		"details"
+	],
+	"additionalProperties": false
+}

@@ -1,0 +1,100 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/set-fx-parameter.schema.json",
+	"title": "set_fx_parameter result",
+	"description": "What set_fx_parameter returns: the value the parameter actually holds, which is not always the value that was asked for. A plugin clamps a value outside its range rather than rejecting it, so the result reports what landed and flags the difference — telling the producer a threshold was set to -30 dB when the plugin floored it at -24 is the failure this field prevents. The formatted value is what to quote to them, since the raw number is often normalised and means nothing. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"track": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"fxIndex": {
+			"type": "integer",
+			"description": "Chain position of the FX that was changed.",
+			"minimum": 0
+		},
+		"fxName": {
+			"type": "string",
+			"description": "Name of the FX at that chain position.",
+			"minLength": 1,
+			"maxLength": 512
+		},
+		"parameterName": {
+			"type": "string",
+			"description": "Parameter that was set, as REAPER names it.",
+			"minLength": 1,
+			"maxLength": 512
+		},
+		"value": {
+			"type": "number",
+			"description": "The value the parameter holds after the call, read back from the plugin rather than assumed from the input."
+		},
+		"previousValue": {
+			"type": "number",
+			"description": "The value the parameter held before the call, so a change can be described as a move rather than a destination."
+		},
+		"clamped": {
+			"type": "boolean",
+			"description": "True when the plugin held the parameter at a bound instead of accepting the requested value. Stated rather than left to be inferred from comparing two numbers, because the agent must not report a value the plugin refused as the value it set."
+		},
+		"formattedValue": {
+			"type": "string",
+			"description": "The value as the plugin's own UI displays it — \"-6.0 dB\", \"120 Hz\". Present when the plugin supplies one, and the string to say to the producer.",
+			"maxLength": 256
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"track",
+		"fxIndex",
+		"fxName",
+		"parameterName",
+		"value",
+		"previousValue",
+		"clamped",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

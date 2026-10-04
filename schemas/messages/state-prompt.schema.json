@@ -1,0 +1,32 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/state-prompt.schema.json",
+	"title": "Producer Prompt",
+	"description": "Payload of a state:prompt envelope. Sent by the REAPER extension or the mobile PWA to start an agent turn. The producer's own words live in promptText and nowhere else: the extension adds no framing to that field, and any surrounding metadata it wants to send goes in a sibling property. That separation is the point of the schema (Requirement 24.3) — the standalone Bedrock Guardrail evaluates the producer's input through ApplyGuardrail and its dataPath resolves to promptText, so a field that mixed typed text with extension-authored framing would have the guardrail scoring our own words alongside the producer's. Project context is deliberately absent: the AgentCore Client reads the cached snapshot the Session State Manager holds rather than having every prompt carry a copy of the session.",
+	"type": "object",
+	"properties": {
+		"promptText": {
+			"type": "string",
+			"description": "Exactly what the producer typed or dictated, verbatim and unframed. This is the field the Bedrock Guardrail's dataPath points at. Named promptText rather than text so that no future metadata property can be mistaken for it, and to match the field the Message Router already reads.",
+			"minLength": 1,
+			"maxLength": 8192
+		},
+		"locale": {
+			"type": "string",
+			"description": "The producer's UI language as a BCP 47 tag — for example en, de, or pt-BR. Carried per turn rather than baked into the system prompt, which would fragment the prompt cache by language. The pattern accepts a language subtag with optional script and region subtags, which covers the seven supported locales without attempting to validate the whole of BCP 47.",
+			"pattern": "^[a-z]{2,3}(-[A-Z][a-z]{3})?(-([A-Z]{2}|[0-9]{3}))?$",
+			"maxLength": 35
+		},
+		"conversationId": {
+			"type": "string",
+			"description": "ULID of the conversation this prompt continues. Optional: its absence is how a client asks for a new conversation, which the server creates and titles from this prompt. Omitted rather than sent empty on the first turn.",
+			"minLength": 1,
+			"maxLength": 64
+		}
+	},
+	"required": [
+		"promptText",
+		"locale"
+	],
+	"additionalProperties": false
+}

@@ -1,0 +1,32 @@
+# CMake build directories and generated files
+build/
+cmake-build-*/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+Testing/
+*.o
+*.so
+*.dylib
+*.dll
+*.pdb
+*.ilk
+
+# Dependencies resolved at configure time — never in version control
+vcpkg_installed/
+
+# CEF binary distribution, downloaded or extracted by hand (see DEPENDENCIES.md)
+third_party/
+
+# UI — only source is in version control, never built assets
+ui/dist/
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

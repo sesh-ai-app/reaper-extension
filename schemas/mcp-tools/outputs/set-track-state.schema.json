@@ -1,0 +1,157 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/set-track-state.schema.json",
+	"title": "set_track_state result",
+	"description": "What set_track_state returns: one outcome per entry in the call's changes array, in the order they were supplied, using the action array outcome shape from messages/tool-result-partial.schema.json. Some changes may fail while others succeed and what succeeded is kept — the whole array ran inside one undo block, so a partial outcome leaves exactly one undo entry reverting what did land. undoPositionBefore is optional here rather than required, and its absence is meaningful: it is reported whenever any change was applied, so a result without it is a call in which nothing changed and no undo marker was recorded.",
+	"type": "object",
+	"properties": {
+		"actions": {
+			"$ref": "#/definitions/actions"
+		},
+		"aliasesLearned": {
+			"type": "array",
+			"description": "Tracks that had a learned alias written in this call. Reported separately from the outcomes because an alias is stored in the project file and read as of the last save, so the producer must be told an alias taught in an unsaved session is lost on the next REAPER launch (Requirement 8.10). Empty when no alias was set.",
+			"items": {
+				"$ref": "#/definitions/trackReference"
+			},
+			"maxItems": 512
+		},
+		"projectSaved": {
+			"type": "boolean",
+			"description": "Whether the project has been saved since it was opened, present only when an alias was learned. False means the aliases in aliasesLearned will not survive the next launch, which is the thing to say to the producer rather than reporting the alias as remembered."
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"actions",
+		"aliasesLearned"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"actions": {
+			"type": "array",
+			"description": "One entry per action in the call's action array, in the order the actions were supplied, so the agent can match an outcome to what it asked for.",
+			"items": {
+				"$ref": "#/definitions/actionOutcome"
+			},
+			"minItems": 1,
+			"maxItems": 512
+		},
+		"actionOutcome": {
+			"description": "The outcome of one action in the array, as one of two closed shapes. Split on success rather than carrying an optional error field so that \"this action failed\" and \"here is why\" cannot come apart: a failed action without a reason is a schema violation, not something the agent has to cope with at runtime.",
+			"oneOf": [
+				{
+					"type": "object",
+					"description": "An action that was applied.",
+					"properties": {
+						"target": {
+							"$ref": "#/definitions/actionTarget"
+						},
+						"ok": {
+							"type": "boolean",
+							"description": "True for an applied action.",
+							"const": true
+						}
+					},
+					"required": [
+						"target",
+						"ok"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"description": "An action that failed, which must say why.",
+					"properties": {
+						"target": {
+							"$ref": "#/definitions/actionTarget"
+						},
+						"ok": {
+							"type": "boolean",
+							"description": "False for an action that was not applied.",
+							"const": false
+						},
+						"error": {
+							"$ref": "#/definitions/actionError"
+						}
+					},
+					"required": [
+						"target",
+						"ok",
+						"error"
+					],
+					"additionalProperties": false
+				}
+			]
+		},
+		"actionTarget": {
+			"type": "string",
+			"description": "What the action addressed, identified as the resolved REAPER GUID where the action targeted an object, so the agent can retry precisely rather than re-resolving a name pattern that may now be ambiguous.",
+			"minLength": 1,
+			"maxLength": 1024
+		},
+		"actionError": {
+			"type": "object",
+			"description": "Why one action failed. Required on a failed action, because \"something went wrong\" is not enough for the agent to tell the producer what to do next.",
+			"properties": {
+				"code": {
+					"type": "string",
+					"description": "Machine-readable failure cause for this action.",
+					"minLength": 1,
+					"maxLength": 128
+				},
+				"message": {
+					"type": "string",
+					"description": "Human-readable explanation of this action's failure.",
+					"minLength": 1,
+					"maxLength": 1024
+				}
+			},
+			"required": [
+				"code",
+				"message"
+			],
+			"additionalProperties": false
+		},
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

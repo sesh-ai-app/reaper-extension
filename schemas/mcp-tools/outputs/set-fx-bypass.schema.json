@@ -1,0 +1,83 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/set-fx-bypass.schema.json",
+	"title": "set_fx_bypass result",
+	"description": "What set_fx_bypass returns: which FX was bypassed or re-enabled, and what its state was before. The previous state is carried so the agent does not describe a no-op as a change — asking to bypass an FX that was already bypassed is a common way for a producer to discover they misread the chain. The plugin keeps its settings either way, which is what makes this the reversible alternative to remove_fx. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"track": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"fxIndex": {
+			"type": "integer",
+			"description": "Chain position of the FX that was changed.",
+			"minimum": 0
+		},
+		"fxName": {
+			"type": "string",
+			"description": "Name of the FX at that chain position, so the agent can confirm it changed the plugin it meant to rather than a position that shifted since the last read.",
+			"minLength": 1,
+			"maxLength": 512
+		},
+		"bypassed": {
+			"type": "boolean",
+			"description": "The FX's bypass state after the call."
+		},
+		"previousBypassed": {
+			"type": "boolean",
+			"description": "The FX's bypass state before the call. Equal to bypassed when the FX was already in the requested state."
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"track",
+		"fxIndex",
+		"fxName",
+		"bypassed",
+		"previousBypassed",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}
