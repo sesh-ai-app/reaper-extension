@@ -255,7 +255,7 @@ TEST_CASE("both rewinding tools register as rewinding the undo stack", "[undo_to
 	CHECK(fixture.registration.every_tool_registered());
 	REQUIRE(fixture.registration.registered_tool_names.size() == 2);
 
-	for (const std::string_view tool_name : {undo_last_action_tool_name, revert_agent_changes_tool_name})
+	for (const std::string_view& tool_name : {undo_last_action_tool_name, revert_agent_changes_tool_name})
 	{
 		const auto* const registered = fixture.registry.find_tool(tool_name);
 		REQUIRE(registered != nullptr);

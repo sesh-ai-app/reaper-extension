@@ -1286,7 +1286,7 @@ namespace sesh_ai::daw::tools
 				{
 					reason += ". What was already set on it stands:";
 
-					for (const std::string_view property : written)
+					for (const std::string_view& property : written)
 					{
 						reason += ' ';
 						reason += property;

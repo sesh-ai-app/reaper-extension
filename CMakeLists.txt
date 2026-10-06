@@ -76,6 +76,49 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# ---------------------------------------------------------------------------
+# Compiler warnings
+#
+# An interface target rather than CMAKE_CXX_FLAGS, and that distinction is the
+# whole point of it. The build compiles third-party code it did not write and
+# cannot fix: libcef_dll_wrapper from the CEF distribution, socket.io-client-cpp
+# through FetchContent, and Catch2 when vcpkg did not supply it. Warnings set
+# globally would reach all of them, and the result is a wall of output nobody
+# can act on — which is the same reasoning that marks the REAPER SDK includes
+# SYSTEM further down, written there as "warnings nobody can fix train people to
+# ignore warnings."
+#
+# So the flags are a usage requirement that exactly two targets opt into: the
+# shared library and the Catch2 suite. The suite is included deliberately — it is
+# two thirds of the C++ in this repository, and the house-style lint already
+# holds it to the same standard as src/.
+#
+# -Wall -Wextra and nothing more, for now. -Wpedantic, -Wshadow, and
+# -Wconversion are each defensible and each likely noisy here: the view-model
+# serialiser narrows std::size_t to long long on purpose, and no src/*.cpp in
+# this repository had been compiled by any toolchain when these flags were
+# added. The honest order is to learn the volume from one CI run across
+# AppleClang, MSVC, and GCC, then widen.
+#
+# Deliberately NOT -Werror. Fatal warnings are the right end state and the wrong
+# starting point: turning them on before the count is known would mean the first
+# build of 25 never-compiled translation units fails on style rather than on
+# anything real, across three compilers at once. Decide after the first green
+# build, and note that CI already keeps the legs independent, so a warning
+# cleanup can land per platform.
+# ---------------------------------------------------------------------------
+
+add_library(sesh_ai_compiler_warnings INTERFACE)
+
+if(MSVC)
+	# /W4 rather than /Wall: MSVC's /Wall includes per-header informational
+	# diagnostics from the standard library itself and is not usable as a project
+	# setting. /W4 is the level that corresponds to -Wall -Wextra in practice.
+	target_compile_options(sesh_ai_compiler_warnings INTERFACE /W4)
+else()
+	target_compile_options(sesh_ai_compiler_warnings INTERFACE -Wall -Wextra)
+endif()
+
 # REAPER loads the extension as a shared library, so everything linked into it
 # must be position-independent.
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -891,6 +934,7 @@ else()
 	)
 
 	target_link_libraries(sesh_ai_extension PRIVATE
+		sesh_ai_compiler_warnings
 		nlohmann_json::nlohmann_json
 		nlohmann_json_schema_validator::validator
 	)

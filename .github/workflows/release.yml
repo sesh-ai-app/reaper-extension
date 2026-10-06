@@ -1,4 +1,4 @@
-# Release — a semver tag on `main` produces the three platform binaries and a
+# Release — a semver tag on `main` produces the four platform binaries and a
 # GitHub Release carrying them (requirement 21.6).
 #
 # ---------------------------------------------------------------------------
@@ -167,10 +167,12 @@ jobs:
           exit "${failed}"
 
   # ---------------------------------------------------------------------------
-  # One archive per platform (requirement 21.6).
+  # One archive per platform and architecture (requirement 21.6).
   #
-  # `fail-fast: true` on purpose: a release where two of the three platforms
-  # built is not a release.
+  # `fail-fast: true` on purpose: a release where three of the four legs built
+  # is not a release. That applies as much to an architecture as to an
+  # operating system — a release missing its Intel Mac archive strands the
+  # producers least likely to have replaced their machines.
   # ---------------------------------------------------------------------------
   build:
     name: Build ${{ matrix.platform_id }}
@@ -183,11 +185,9 @@ jobs:
       matrix:
         include:
           # One entry per platform REAPER and CEF have in common on the runners
-          # GitHub offers. Notably absent: macOS x86_64. `CMakeLists.txt` carries
-          # digests for all six CEF platforms, so adding an Intel Mac leg is a
-          # matrix entry rather than a change — but it needs an Intel runner,
-          # and Intel Macs running REAPER are a real audience, so the gap is
-          # stated rather than left to be discovered from a release page.
+          # GitHub offers. `CMakeLists.txt` carries published digests for all six
+          # CEF platforms, so the set here is bounded by runner availability
+          # rather than by anything in this repository.
           - platform_id: macos-arm64
             runner: macos-latest
             library_extension: dylib
@@ -196,6 +196,30 @@ jobs:
             # Pinned so the CEF platform selection in `CMakeLists.txt` reads an
             # explicit architecture rather than `CMAKE_SYSTEM_PROCESSOR`.
             extra_cmake_arguments: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+
+          # Intel macOS is a required target, not a nice-to-have: REAPER has a
+          # large installed base on Intel Macs and they are the machines least
+          # likely to be replaced on Apple's schedule. Requirement 1.4 names the
+          # architecture for that reason.
+          #
+          # `macos-15-intel` is the last x86_64 image GitHub will offer. The
+          # previous one, `macos-13`, was retired on 4 December 2025, and this
+          # one is announced for retirement in **August 2027** — after which
+          # there is no hosted Intel runner at all. The three ways to keep
+          # shipping this binary past that date are written up in
+          # `docs/notes/intel-macos-after-hosted-runners.md` in the monorepo;
+          # none is chosen yet, because the cheapest of them depends on what
+          # CEF's packaging looks like by then.
+          #
+          # Until that date this leg is strictly better than any of them: it
+          # compiles natively and, unlike a cross-compile, it *runs the Catch2
+          # suite* on the architecture it ships.
+          - platform_id: macos-x64
+            runner: macos-15-intel
+            library_extension: dylib
+            vcpkg_triplet: x64-osx
+            archive_format: tar.gz
+            extra_cmake_arguments: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
 
           - platform_id: windows-x64
             runner: windows-latest
@@ -409,9 +433,9 @@ jobs:
           retention-days: 7
 
   # ---------------------------------------------------------------------------
-  # Create the release and attach the three archives.
+  # Create the release and attach the four archives.
   #
-  # A separate job so the release is created once, after all three platforms
+  # A separate job so the release is created once, after every build leg
   # succeeded, rather than each build racing to append to a release that may
   # never be complete. This is also the only job with write access to anything.
   # ---------------------------------------------------------------------------
@@ -436,13 +460,16 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Three platforms, three archives. Fewer means an upload was lost
-          # between jobs, which would otherwise show up as a release that
-          # silently omits a platform.
+          # Four build legs, four archives: macOS arm64, macOS x86_64, Windows
+          # x64, Linux x64. Fewer means an upload was lost between jobs, which
+          # would otherwise show up as a release that silently omits a platform
+          # — and the one most likely to go missing is an architecture rather
+          # than an operating system, since the two macOS archives differ only
+          # in their suffix.
           count="$(find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')"
 
-          if [ "${count}" -ne 3 ]; then
-            echo "::error::expected 3 platform archives, found ${count}."
+          if [ "${count}" -ne 4 ]; then
+            echo "::error::expected 4 platform archives, found ${count}."
             ls -l
             exit 1
           fi

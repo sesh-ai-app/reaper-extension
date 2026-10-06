@@ -257,7 +257,7 @@ TEST_CASE("the confirmation envelope types are the ones the protocol names", "[c
 		confirmation_reject_envelope_type
 	};
 
-	for (const std::string_view envelope_type : confirmation_envelope_types) {
+	for (const std::string_view& envelope_type : confirmation_envelope_types) {
 		REQUIRE(envelope_type.substr(0, 8) == "confirm:");
 	}
 }

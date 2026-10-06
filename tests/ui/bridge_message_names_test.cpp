@@ -158,7 +158,7 @@ TEST_CASE("each bridge message travels in exactly one direction", "[ui][bridge]"
 		// The seven the C++ side produces. `script:download` is here and not in the
 		// other array even though the UI acts on it, because requirement 5.7 routes it
 		// inbound from the server and the bridge only ever carries it one way.
-		for (const std::string_view message_name : bridge_messages_to_javascript) {
+		for (const std::string_view& message_name : bridge_messages_to_javascript) {
 			const auto direction = bridge_message_direction_for(message_name);
 
 			REQUIRE(direction.has_value());
@@ -171,7 +171,7 @@ TEST_CASE("each bridge message travels in exactly one direction", "[ui][bridge]"
 		// The three the producer originates. All three are protocol payloads carried
 		// verbatim: the UI builds the shape `messages/*.schema.json` already describes,
 		// so the C++ side queues it rather than re-assembling it.
-		for (const std::string_view message_name : bridge_messages_from_javascript) {
+		for (const std::string_view& message_name : bridge_messages_from_javascript) {
 			const auto direction = bridge_message_direction_for(message_name);
 
 			REQUIRE(direction.has_value());
@@ -181,8 +181,8 @@ TEST_CASE("each bridge message travels in exactly one direction", "[ui][bridge]"
 
 	SECTION("no name appears in both")
 	{
-		for (const std::string_view published : bridge_messages_to_javascript) {
-			for (const std::string_view received : bridge_messages_from_javascript) {
+		for (const std::string_view& published : bridge_messages_to_javascript) {
+			for (const std::string_view& received : bridge_messages_from_javascript) {
 				CHECK(published != received);
 			}
 		}
@@ -233,7 +233,7 @@ TEST_CASE("the view model half is exactly the view: namespace", "[ui][bridge]")
 	{
 		std::size_t view_model_count = 0;
 
-		for (const std::string_view message_name : all_bridge_message_names) {
+		for (const std::string_view& message_name : all_bridge_message_names) {
 			if (is_view_model_bridge_message(message_name)) {
 				++view_model_count;
 			}
@@ -262,7 +262,7 @@ TEST_CASE("the two confirmation decisions share one schema", "[ui][bridge]")
 
 TEST_CASE("the verbatim half names messages/ schemas and the view half names bridge-messages/", "[ui][bridge]")
 {
-	for (const std::string_view message_name : all_bridge_message_names) {
+	for (const std::string_view& message_name : all_bridge_message_names) {
 		const std::string_view schema_path = bridge_message_schema_path_for(message_name);
 
 		REQUIRE_FALSE(schema_path.empty());
@@ -308,7 +308,7 @@ TEST_CASE("every bridge message's schema is in the vendored bundle", "[ui][bridg
 
 	REQUIRE_FALSE(manifest_paths.empty());
 
-	for (const std::string_view message_name : all_bridge_message_names) {
+	for (const std::string_view& message_name : all_bridge_message_names) {
 		const std::string schema_path{bridge_message_schema_path_for(message_name)};
 
 		CAPTURE(message_name, schema_path);

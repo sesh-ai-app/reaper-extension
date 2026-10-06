@@ -152,19 +152,6 @@ namespace
 		return track;
 	}
 
-	std::string guid_of(const std::vector<track_state_reading>& tracks, std::string_view name)
-	{
-		for (const track_state_reading& track : tracks)
-		{
-			if (track.name == name)
-			{
-				return track.guid;
-			}
-		}
-
-		return {};
-	}
-
 	const reported_track_state* reported_track_named(
 		const list_tracks_result& result,
 		std::string_view name)

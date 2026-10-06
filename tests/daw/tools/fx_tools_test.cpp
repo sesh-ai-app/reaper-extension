@@ -1669,59 +1669,78 @@ namespace
 		}
 	};
 
+	// A payload carrying only a description.
+	//
+	// `test_payload` is the reader's type as well as the writer's, so it holds one
+	// request optional per tool alongside the description. The writer sets none of
+	// them, and brace-initializing the description alone leaves eight fields
+	// unmentioned — which `-Wmissing-field-initializers` reports once per handler
+	// below. Naming the one field that is being set says the same thing the braces
+	// said, without eight diagnostics saying the rest were deliberate.
+	//
+	// A designated initializer would be the obvious alternative and is C++20; this
+	// project is C++17 with extensions off.
+	test_payload described(std::string description)
+	{
+		test_payload payload;
+		payload.described_result = std::move(description);
+
+		return payload;
+	}
+
 	// Turns a result into a payload. Enough of each result is described that a test can
 	// tell which handler produced it and what it said.
 	struct test_result_writer
 	{
 		test_payload operator()(const add_fx_result& result) const
 		{
-			return test_payload{
-				"add_fx " + result.fx_name + " at " + std::to_string(result.fx_index)};
+			return described(
+				"add_fx " + result.fx_name + " at " + std::to_string(result.fx_index));
 		}
 
 		test_payload operator()(const remove_fx_result& result) const
 		{
-			return test_payload{
-				"remove_fx " + result.fx_name + " leaving " + std::to_string(result.chain_length)};
+			return described(
+				"remove_fx " + result.fx_name + " leaving " + std::to_string(result.chain_length));
 		}
 
 		test_payload operator()(const set_fx_bypass_result& result) const
 		{
-			return test_payload{
+			return described(
 				std::string{"set_fx_bypass "} + (result.bypassed ? "on" : "off") + " for "
-					+ result.fx_name};
+					+ result.fx_name);
 		}
 
 		test_payload operator()(const set_fx_parameter_result& result) const
 		{
-			return test_payload{
-				"set_fx_parameter " + result.parameter_name + " to " + std::to_string(result.value)};
+			return described(
+				"set_fx_parameter " + result.parameter_name + " to " + std::to_string(result.value));
 		}
 
 		test_payload operator()(const get_fx_parameters_result& result) const
 		{
-			return test_payload{
+			return described(
 				"get_fx_parameters " + std::to_string(result.parameters.size()) + " of "
-					+ std::to_string(result.total_in_range)};
+					+ std::to_string(result.total_in_range));
 		}
 
 		test_payload operator()(const list_track_fx_result& result) const
 		{
-			return test_payload{"list_track_fx " + std::to_string(result.fx.size())};
+			return described("list_track_fx " + std::to_string(result.fx.size()));
 		}
 
 		test_payload operator()(const list_installed_fx_result& result) const
 		{
-			return test_payload{
+			return described(
 				"list_installed_fx " + std::to_string(result.matches.size()) + " of "
-					+ std::to_string(result.total_in_range)};
+					+ std::to_string(result.total_in_range));
 		}
 
 		test_payload operator()(const apply_fx_destructively_result& result) const
 		{
-			return test_payload{
+			return described(
 				"apply_fx_destructively " + std::to_string(result.processed_item_guids.size())
-					+ " items through " + std::to_string(result.applied_fx_count) + " FX"};
+					+ " items through " + std::to_string(result.applied_fx_count) + " FX");
 		}
 	};
 
@@ -1890,7 +1909,7 @@ TEST_CASE("all eight FX tools register, and through the seam each one belongs to
 		list_track_fx_tool_name,
 		list_installed_fx_tool_name};
 
-	for (const std::string_view tool_name : reads)
+	for (const std::string_view& tool_name : reads)
 	{
 		const auto* const registered = scripted.registry.find_tool(tool_name);
 
@@ -1905,7 +1924,7 @@ TEST_CASE("all eight FX tools register, and through the seam each one belongs to
 		set_fx_parameter_tool_name,
 		apply_fx_destructively_tool_name};
 
-	for (const std::string_view tool_name : mutations)
+	for (const std::string_view& tool_name : mutations)
 	{
 		const auto* const registered = scripted.registry.find_tool(tool_name);
 

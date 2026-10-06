@@ -126,7 +126,7 @@ namespace
 		std::vector<std::string> expected;
 		expected.reserve(names.size());
 
-		for (const std::string_view name : names)
+		for (const std::string_view& name : names)
 		{
 			expected.emplace_back(name);
 		}
@@ -271,7 +271,7 @@ TEST_CASE("the snapshot omits every field requirement 6.2 excludes", "[context][
 	{
 		for (const StubDocument& track_document : document.at("tracks").elements())
 		{
-			for (const std::string_view excluded : track_properties_absent_from_the_snapshot)
+			for (const std::string_view& excluded : track_properties_absent_from_the_snapshot)
 			{
 				// Named in the assertion, so a failure says which field crept in rather
 				// than only that the key set differed.
@@ -318,7 +318,7 @@ TEST_CASE("the snapshot omits every field requirement 6.2 excludes", "[context][
 				})
 		);
 
-		for (const std::string_view excluded : master_track_properties_absent_from_the_snapshot)
+		for (const std::string_view& excluded : master_track_properties_absent_from_the_snapshot)
 		{
 			INFO("excluded master track property: " << excluded);
 			REQUIRE_FALSE(master_track.contains(std::string{excluded}));
@@ -327,7 +327,7 @@ TEST_CASE("the snapshot omits every field requirement 6.2 excludes", "[context][
 
 	SECTION("the marker and region arrays are replaced by counts, not carried")
 	{
-		for (const std::string_view replaced : snapshot_properties_replaced_by_counts)
+		for (const std::string_view& replaced : snapshot_properties_replaced_by_counts)
 		{
 			INFO("property replaced by a count: " << replaced);
 			REQUIRE_FALSE(document.contains(std::string{replaced}));

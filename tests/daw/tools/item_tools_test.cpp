@@ -1996,7 +1996,7 @@ TEST_CASE("all eight item tools register, and through the seam each one belongs 
 		import_audio_file_tool_name,
 		import_midi_file_tool_name};
 
-	for (const std::string_view tool_name : mutations)
+	for (const std::string_view& tool_name : mutations)
 	{
 		const auto* const registered = scripted.registry.find_tool(tool_name);
 

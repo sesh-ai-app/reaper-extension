@@ -409,7 +409,7 @@ namespace sesh_ai::transport {
 			schema_paths.emplace_back(binding.schema_path);
 		}
 
-		for (const std::string_view schema_path : bridge_message_schema_paths) {
+		for (const std::string_view& schema_path : bridge_message_schema_paths) {
 			schema_paths.emplace_back(schema_path);
 		}
 

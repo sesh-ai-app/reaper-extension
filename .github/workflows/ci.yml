@@ -1,7 +1,8 @@
 # Continuous integration for the Sesh AI REAPER extension.
 #
-# Requirement 21: build on macOS, Windows, and Linux with CMake (21.1), run the
-# Catch2 suite on all three (21.2), verify the vendored schemas against
+# Requirement 21: build on macOS (arm64 and x86_64), Windows, and Linux with
+# CMake (21.1), run the Catch2 suite on every one of them (21.2), verify the
+# vendored schemas against
 # MANIFEST.json as a build step (21.3), build the React/TypeScript assets before
 # the CMake build packages them (21.4), lint both C++ and TypeScript (21.5), and
 # pin every action by commit hash (21.7).
@@ -31,7 +32,7 @@
 # The `build-and-test` matrix runs each platform twice, with and without CEF, and
 # `fail-fast` is off. The CEF legs are the ones carrying hundreds of megabytes of
 # download, a wrapper library compiled from source, and two translation units that
-# have never seen a compiler. If they fail, the three CEF-less legs still compile
+# have never seen a compiler. If they fail, the four CEF-less legs still compile
 # every other source and still run the whole Catch2 suite, so a CEF problem cannot
 # hide a test regression behind it.
 #
@@ -112,8 +113,7 @@ jobs:
   #
   # Runs once rather than per platform, and publishes `ui/dist` as an artifact the
   # build legs download. The Vite output is platform-independent, so building it
-  # three times would be three chances for the three platforms to package
-  # different bytes.
+  # per leg would be eight chances for the eight legs to package different bytes.
   #
   # `npm run build` is `tsc --noEmit && vite build`, so there is no separate
   # typecheck step — it would run tsc twice to learn the same thing.
@@ -172,8 +172,9 @@ jobs:
   # ---------------------------------------------------------------------------
   # Steps 2, 3, and 4 (requirements 21.1, 21.2, 21.3).
   #
-  # Six legs: macOS, Windows, and Linux, each with and without a CEF distribution.
-  # See the header for why CEF is a matrix axis rather than always on.
+  # Eight legs: macOS arm64, macOS x86_64, Windows, and Linux, each with and
+  # without a CEF distribution. See the header for why CEF is a matrix axis
+  # rather than always on.
   # ---------------------------------------------------------------------------
   build-and-test:
     name: ${{ matrix.os }}${{ matrix.cef && ' with CEF' || '' }}
@@ -185,7 +186,23 @@ jobs:
       # Windows build because macOS failed throws that away.
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Four runners rather than three, because `macos-15-intel` is a target
+        # and not a variant of `macos-latest`. The two differ in the CEF
+        # distribution downloaded, the vcpkg triplet resolved, and the compiler's
+        # target architecture — so an arm64-only matrix would leave the Intel
+        # binary that the release workflow ships entirely unbuilt by CI.
+        #
+        # `macos-15-intel` is the last x86_64 image GitHub offers and is
+        # announced for retirement in August 2027. See the matrix comment in
+        # `release.yml` and `docs/notes/intel-macos-after-hosted-runners.md` in
+        # the monorepo.
+        #
+        # No `CMAKE_OSX_ARCHITECTURES` is passed on either macOS leg, unlike the
+        # release workflow: configuration falls back to `CMAKE_SYSTEM_PROCESSOR`,
+        # which on a native runner is already the right answer. The release
+        # workflow pins it because an archive named for an architecture should
+        # not depend on a fallback being correct.
+        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
         cef: [false, true]
 
     steps:

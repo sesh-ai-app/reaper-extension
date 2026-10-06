@@ -415,13 +415,13 @@ namespace sesh_ai::ui {
 	constexpr std::optional<BridgeMessageDirection> bridge_message_direction_for(
 		std::string_view message_name)
 	{
-		for (const std::string_view candidate : bridge_messages_to_javascript) {
+		for (const std::string_view& candidate : bridge_messages_to_javascript) {
 			if (candidate == message_name) {
 				return BridgeMessageDirection::to_javascript;
 			}
 		}
 
-		for (const std::string_view candidate : bridge_messages_from_javascript) {
+		for (const std::string_view& candidate : bridge_messages_from_javascript) {
 			if (candidate == message_name) {
 				return BridgeMessageDirection::from_javascript;
 			}
@@ -520,7 +520,7 @@ namespace sesh_ai::ui {
 				return false;
 			}
 
-			for (const std::string_view candidate : envelope_type_namespaces) {
+			for (const std::string_view& candidate : envelope_type_namespaces) {
 				if (candidate == message_namespace) {
 					return true;
 				}

@@ -752,6 +752,15 @@ namespace
 
 		std::string path = "/Users/producer/Music/Session/renders/" + base_file_name;
 
+		// The spelling the resolver itself would produce, returned before either
+		// transformation rather than falling through both of them. Equivalent either
+		// way — neither flag is set for it — and it names the fourth constant, which
+		// is otherwise declared and never referred to.
+		if (spelling == spelling_as_resolved)
+		{
+			return path;
+		}
+
 		if (upper_case)
 		{
 			for (char& character : path)

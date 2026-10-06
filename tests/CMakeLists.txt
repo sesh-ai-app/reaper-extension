@@ -29,6 +29,14 @@ target_include_directories(sesh_ai_tests PRIVATE ${SESH_AI_INCLUDE_DIRECTORIES})
 
 target_link_libraries(sesh_ai_tests PRIVATE Catch2::Catch2WithMain)
 
+# -Wall -Wextra, or /W4 under MSVC. PRIVATE, so the flags apply to this target's
+# own translation units and not to Catch2's when vcpkg did not supply it and it
+# is built from source here. The suite is held to the same warning level as the
+# library on purpose: most of this codebase's logic lives in headers under src/,
+# and this target is the only thing that compiles them on a machine without the
+# JSON dependencies. See the interface target's comment in the root CMakeLists.
+target_link_libraries(sesh_ai_tests PRIVATE sesh_ai_compiler_warnings)
+
 # The queue pair is the one thing in this codebase whose contract is about threads,
 # so the suite actually runs threads against it rather than reasoning about the
 # mutex. That needs pthreads linked explicitly on Linux.
