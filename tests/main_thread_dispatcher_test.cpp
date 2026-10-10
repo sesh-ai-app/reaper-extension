@@ -464,7 +464,13 @@ TEST_CASE("envelopes pushed from another thread are routed on the next tick", "[
 {
 	// The whole arrangement end to end: a network thread pushing parsed envelopes, a
 	// main thread ticking, and nothing shared but the queue pair.
-	constexpr int envelope_count = 200;
+	//
+	// `static` so the network thread's lambda can read it without naming it in the
+	// capture list: a static local is not captured at all. MSVC requires a constant
+	// used inside a lambda to be captured or static (C3493) where GCC and Clang do
+	// not, and the capture list below is more useful saying "the queue pair, and
+	// nothing else" than it would be listing a loop bound.
+	static constexpr int envelope_count = 200;
 
 	StubQueues queues;
 	std::vector<int> routed_identifiers;

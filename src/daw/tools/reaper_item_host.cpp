@@ -11,7 +11,7 @@
 
 #include <daw/tools/reaper_item_host.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 #include <cstddef>
 #include <utility>

@@ -18,7 +18,7 @@
 
 #include <transport/envelope.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 namespace sesh_ai::transport {
 

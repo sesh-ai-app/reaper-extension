@@ -23,11 +23,12 @@
 // `daw/object_resolver.h` is included before the SDK, and that ordering is
 // load-bearing rather than tidy — on macOS and Linux reaper_plugin.h reaches for
 // WDL's swell, which defines `min` and `max` as function-like macros, and a
-// qualified `std::min` parsed after them does not compile.
+// qualified `std::min` parsed after them does not compile. `reaper_sdk.h` is the
+// only route to the SDK in this tree and carries the full account of why.
 
 #include <daw/object_resolver.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 #include <utility>
 

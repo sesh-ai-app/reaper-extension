@@ -12,7 +12,7 @@
 
 #include <daw/reaper_fx_host.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 #include <cstddef>
 #include <string>

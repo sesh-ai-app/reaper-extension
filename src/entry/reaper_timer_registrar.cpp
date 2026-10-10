@@ -9,11 +9,11 @@
 // one translation unit to define REAPERAPI_IMPLEMENT, which is where the imported
 // API function pointers get their storage. That belongs with the entry point, not
 // here — this file needs only the registration table REAPER passes in, so it
-// includes reaper_plugin.h and stays out of the way of that decision.
+// includes the SDK through `reaper_sdk.h` and stays out of the way of that decision.
 
 #include <entry/reaper_timer_registrar.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 namespace sesh_ai::entry {
 

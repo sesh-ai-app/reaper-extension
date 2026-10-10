@@ -113,9 +113,15 @@ TEST_CASE("every one of the 42 constrained tools is registered", "[composition][
 		// would throw `std::bad_function_call` from inside an undo block — so the
 		// symptom is six tools quietly absent, and the only thing that surfaces it at
 		// load is this list.
-		ComposedGraph without_marker_region_codec{
-			sesh_ai_tests::CodecGaps{.marker_region = true}
-		};
+		// A named local and one field assignment rather than
+		// `CodecGaps{.marker_region = true}`. Designated initializers are C++20, and
+		// this project is C++17 with CMAKE_CXX_EXTENSIONS OFF — GCC and Clang accept
+		// them anyway as an extension, MSVC rejects them (C7555). Every other field
+		// of CodecGaps already defaults to false, so this says the same thing.
+		sesh_ai_tests::CodecGaps marker_region_codec_gap;
+		marker_region_codec_gap.marker_region = true;
+
+		ComposedGraph without_marker_region_codec{marker_region_codec_gap};
 
 		const ToolRegistryCompositionReport& gapped =
 			without_marker_region_codec.graph().tool_registry_report();

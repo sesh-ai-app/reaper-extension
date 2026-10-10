@@ -158,8 +158,16 @@ TEST_CASE("concurrent producers and a draining consumer lose and duplicate nothi
 	// The real arrangement is one network thread pushing and REAPER's main thread
 	// draining. Four producers is the same contract under more pressure, and the
 	// assertion is the one that matters: every identifier arrives exactly once.
+	//
+	// `envelopes_per_producer` is `static` so each producer's lambda can read it
+	// without naming it in the capture list: a static local is not captured at all.
+	// MSVC requires a constant used inside a lambda to be captured or static (C3493)
+	// where GCC and Clang do not, and the capture list below says something worth
+	// keeping legible — two shared objects by reference, this thread's own index by
+	// copy. A loop bound listed alongside `producer_index` would read as per-thread
+	// state, which it is not.
 	constexpr int producer_thread_count = 4;
-	constexpr int envelopes_per_producer = 500;
+	static constexpr int envelopes_per_producer = 500;
 	constexpr int total_envelope_count = producer_thread_count * envelopes_per_producer;
 
 	ConcurrentQueue<StubEnvelope> queue;
@@ -204,7 +212,10 @@ TEST_CASE("concurrent producers and a draining consumer lose and duplicate nothi
 TEST_CASE("a queue shared by pushing and popping threads stays consistent", "[queue][threads]")
 {
 	// try_pop rather than drain_up_to — the same queue under the other read path.
-	constexpr int envelope_count = 2000;
+	//
+	// `static` for the same reason as the case above: the producer's lambda reads it
+	// without capturing it, so the capture list stays "the queue and nothing else".
+	static constexpr int envelope_count = 2000;
 
 	ConcurrentQueue<StubEnvelope> queue;
 

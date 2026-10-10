@@ -378,7 +378,12 @@ TEST_CASE("the connection state presenter defers the publish to the tick", "[bri
 			publication_requests.fetch_add(1, std::memory_order_relaxed);
 		}};
 
-		constexpr std::size_t presentation_count = 200;
+		// `static` so the network thread's lambda can read it without naming it in
+		// the capture list: a static local is not captured at all. MSVC requires a
+		// constant used inside a lambda to be captured or static (C3493) where GCC
+		// and Clang do not, and the capture list is the clearer statement of what
+		// crosses the thread boundary when it names only the presenter.
+		static constexpr std::size_t presentation_count = 200;
 
 		std::thread network_thread{[&presenter] {
 			for (std::size_t attempt = 1; attempt <= presentation_count; ++attempt) {

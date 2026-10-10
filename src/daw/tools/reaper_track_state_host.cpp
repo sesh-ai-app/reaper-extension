@@ -14,7 +14,7 @@
 
 #include <daw/tools/reaper_track_state_host.h>
 
-// Before reaper_plugin.h, and that ordering is load-bearing rather than tidy.
+// Before the SDK, and that ordering is load-bearing rather than tidy.
 //
 // This is where `color_from_reaper_custom_color` and `reaper_custom_color_from` live —
 // one implementation of `I_CUSTOMCOLOR`'s enabled flag rule, shared with the marker and
@@ -23,9 +23,13 @@
 // macros, and marker_region_tools.h calls `std::min`. Parsed after the SDK, the macro
 // eats the qualified call and the header does not compile. Parsed before it, there is
 // nothing to eat. The same hazard is why nothing below this line calls `std::max`.
+//
+// `reaper_sdk.h` below is the only route to the SDK in this tree. It pre-includes the
+// standard library for the same reason this include sits where it does, and carries the
+// full account of why.
 #include <daw/tools/marker_region_tools.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 #include <cstddef>
 #include <cstdlib>

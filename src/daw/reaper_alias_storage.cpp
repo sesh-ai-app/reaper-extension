@@ -22,10 +22,12 @@
 // `daw/reaper_alias_storage.h` comes before the SDK, which is load-bearing rather
 // than tidy: on macOS and Linux the SDK reaches for WDL's swell, whose `min` and
 // `max` function-like macros eat a qualified `std::min` parsed after them.
+// `reaper_sdk.h` is the only route to the SDK in this tree and carries the full
+// account of why.
 
 #include <daw/reaper_alias_storage.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 #include <cstddef>
 #include <memory>

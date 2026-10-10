@@ -70,13 +70,13 @@
 
 #include <entry/plugin_entry.h>
 
-// Project headers before `reaper_plugin.h`, and that ordering is load-bearing rather
-// than tidy. On macOS and Linux the SDK header reaches for WDL's swell, which defines
-// `min` and `max` as function-like macros; a header parsed after it that calls
-// `std::min` or `std::max` has the qualified call eaten before the compiler sees it.
-// Parsed before, there is nothing to eat. The same hazard is why nothing below this
-// line calls either. See `daw/tools/reaper_track_state_host.cpp`, where it was first
-// hit.
+// Project headers before the SDK, and that ordering is load-bearing rather than tidy.
+// On macOS and Linux the SDK header reaches for WDL's swell, which defines `min` and
+// `max` as function-like macros; a header parsed after it that calls `std::min` or
+// `std::max` has the qualified call eaten before the compiler sees it. Parsed before,
+// there is nothing to eat. The same hazard is why nothing below this line calls either.
+// See `daw/tools/reaper_track_state_host.cpp`, where it was first hit, and
+// `reaper_sdk.h`, which is the only route to the SDK in this tree.
 #include <entry/extension_log.h>
 #include <entry/main_thread_dispatcher.h>
 #include <entry/reaper_timer_registrar.h>
@@ -84,7 +84,7 @@
 #include <entry/timer_registration.h>
 #include <transport/envelope.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 #include <cstdio>
 #include <memory>

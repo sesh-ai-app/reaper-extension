@@ -12,7 +12,7 @@
 
 #include <context/reaper_project_context_source.h>
 
-#include <reaper_plugin.h>
+#include <reaper_sdk.h>
 
 #include <cstddef>
 #include <cstdlib>
