@@ -1,0 +1,111 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/tool-result-partial.schema.json",
+	"title": "Tool Action Array Outcome",
+	"description": "Payload the REAPER extension returns inside a response:* envelope for a tool carrying an action array, reporting the outcome of each action separately. The MCP Tool Server reads it and reports total success, total failure, or a partial outcome — a result containing any failed action is never reported to AgentCore as an unqualified success, because the producer would be told a change landed when it did not. Successful actions are never rolled back when a sibling fails; the extension executes the whole array inside one REAPER undo block, so a partial outcome leaves exactly one undo entry reverting what did land.",
+	"type": "object",
+	"properties": {
+		"actions": {
+			"type": "array",
+			"description": "One entry per action in the call's action array, in the order the actions were supplied, so the agent can match an outcome to what it asked for.",
+			"items": {
+				"$ref": "#/definitions/actionOutcome"
+			},
+			"minItems": 1,
+			"maxItems": 512
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured before the first action was applied. Reported whenever any action succeeded, since the session changed and \"revert all\" needs a position to walk back to.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for the whole action array.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	},
+	"required": [
+		"actions"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"actionOutcome": {
+			"description": "The outcome of one action in the array, as one of two closed shapes. Split on success rather than carrying an optional error field so that \"this action failed\" and \"here is why\" cannot come apart: a failed action without a reason is a schema violation, not something the agent has to cope with at runtime.",
+			"oneOf": [
+				{
+					"type": "object",
+					"description": "An action that was applied.",
+					"properties": {
+						"target": {
+							"$ref": "#/definitions/actionTarget"
+						},
+						"ok": {
+							"type": "boolean",
+							"description": "True for an applied action.",
+							"const": true
+						}
+					},
+					"required": [
+						"target",
+						"ok"
+					],
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"description": "An action that failed, which must say why.",
+					"properties": {
+						"target": {
+							"$ref": "#/definitions/actionTarget"
+						},
+						"ok": {
+							"type": "boolean",
+							"description": "False for an action that was not applied.",
+							"const": false
+						},
+						"error": {
+							"$ref": "#/definitions/actionError"
+						}
+					},
+					"required": [
+						"target",
+						"ok",
+						"error"
+					],
+					"additionalProperties": false
+				}
+			]
+		},
+		"actionTarget": {
+			"type": "string",
+			"description": "What the action addressed, identified as the resolved REAPER GUID where the action targeted an object, so the agent can retry precisely rather than re-resolving a name pattern that may now be ambiguous.",
+			"minLength": 1,
+			"maxLength": 1024
+		},
+		"actionError": {
+			"type": "object",
+			"description": "Why one action failed. Required on a failed action, because \"something went wrong\" is not enough for the agent to tell the producer what to do next.",
+			"properties": {
+				"code": {
+					"type": "string",
+					"description": "Machine-readable failure cause for this action.",
+					"minLength": 1,
+					"maxLength": 128
+				},
+				"message": {
+					"type": "string",
+					"description": "Human-readable explanation of this action's failure.",
+					"minLength": 1,
+					"maxLength": 1024
+				}
+			},
+			"required": [
+				"code",
+				"message"
+			],
+			"additionalProperties": false
+		}
+	}
+}

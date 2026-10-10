@@ -1,0 +1,38 @@
+{
+	"$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+	"name": "sesh-ai-extension",
+	"version": "0.1.0",
+	"description": "Sesh AI — REAPER extension",
+	"homepage": "https://github.com/sesh-ai-app/reaper-extension",
+	"license": "MIT",
+	"builtin-baseline": "07f4812200df3d3c931c0c8a6081d3b21fe2bf9f",
+	"dependencies": [
+		{
+			"name": "nlohmann-json",
+			"version>=": "3.12.0"
+		},
+		{
+			"name": "json-schema-validator",
+			"version>=": "2.4.0"
+		},
+		{
+			"name": "catch2",
+			"version>=": "3.16.0"
+		}
+	],
+	"overrides": [
+		{
+			"name": "nlohmann-json",
+			"version": "3.12.0",
+			"port-version": 2
+		},
+		{
+			"name": "json-schema-validator",
+			"version": "2.4.0"
+		},
+		{
+			"name": "catch2",
+			"version": "3.16.0"
+		}
+	]
+}

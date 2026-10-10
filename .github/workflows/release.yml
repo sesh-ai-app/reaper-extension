@@ -1,0 +1,572 @@
+# Release — a semver tag on `main` produces the four platform binaries and a
+# GitHub Release carrying them (requirement 21.6).
+#
+# ---------------------------------------------------------------------------
+# A tag trigger cannot be restricted to a branch, so the check is a job
+#
+# The workflow steering says "semver tags on `main`". GitHub cannot express that:
+# a `push` event for a tag carries no branch, and `branches:` alongside `tags:`
+# is an OR rather than an AND. So `verify-tag` resolves `origin/main` and refuses
+# a tag whose commit is not an ancestor of it. That is the real enforcement; the
+# `tags:` filter below only decides what semver looks like.
+#
+# The pattern deliberately excludes prereleases — `v0.1.0-rc.1` does not match —
+# because the steering names `v0.1.0`, `v0.2.0`, `v1.0.0` and nothing else.
+#
+# ---------------------------------------------------------------------------
+# Every action is pinned to a full 40-character commit SHA
+#
+# Not a tag, which is mutable. The version is in the trailing comment so a human
+# and Dependabot can both read it; `.github/dependabot.yml` keeps the pair in
+# step. This is the OpenSSF Scorecard Pinned-Dependencies check, and it is the
+# same rule `CMakeLists.txt` already follows for socket.io-client-cpp and the
+# REAPER SDK.
+#
+# ---------------------------------------------------------------------------
+# What this has NOT been shown to do
+#
+# No part of this has run. Beyond that, two things are known to be incomplete and
+# are not hidden by the workflow succeeding:
+#
+#   - The CEF branch of `CMakeLists.txt` has never been exercised. There is no CEF
+#     distribution on any development machine, so `-DSESH_AI_REQUIRE_CEF=ON`
+#     below is the first thing that will ever compile
+#     `src/ui/cef_browser_host.cpp` and `src/entry/cef_panel_browser_creator.cpp`.
+#     Expect the first tag push to fail here.
+#   - The panel window does not exist, and neither does the CEF subprocess
+#     helper. `DockWindowAddEx` needs a dialog resource plus the SWELL
+#     resource-generation step on macOS and Linux, and `CefRuntimeLayout`
+#     wants a `subprocess_path` pointing at a helper executable that has no
+#     CMake target. So the archive this builds installs and loads, and the
+#     panel reports that it has no browser. It is a releasable build of what
+#     exists, not a working UI.
+#
+# ---------------------------------------------------------------------------
+# Every runner label is explicit
+#
+# No `*-latest` anywhere. For the four build legs that is a product decision
+# rather than a hygiene one: **the runner image determines what the archive will
+# run on.** A macOS deployment target and a `_WIN32_WINNT` floor are declared in
+# `CMakeLists.txt`, but a glibc floor is simply whatever the linking machine
+# provides, so `ubuntu-latest` would make the Linux archive's compatibility a
+# property of GitHub's rollout schedule — and that schedule is live: the label
+# moves from Ubuntu 24.04 to 26.04 gradually between 19 October and 19 November
+# 2026.
+#
+# The archives are the thing producers download, so the floors are enforced here
+# too and not merely in CI: `scripts/check-cef-platform-floor.sh` runs on the
+# macOS and Linux legs below and fails the release when CEF's own minimum exceeds
+# what the build declares. Shipping an archive that installs and then cannot load
+# is the one failure mode a release workflow has no excuse for.
+#
+# ---------------------------------------------------------------------------
+# Packaging lives here rather than in CMake, for now
+#
+# `CMakeLists.txt` has no `install()` rules, so the staging below is the only
+# description of the install layout. `sesh_ai_ui/` is attested —
+# `tests/ui/ui_host_test.cpp` builds its `file://` URLs over
+# `UserPlugins/sesh_ai_ui` — but `sesh_ai_cef/` is this workflow's choice, since
+# nothing yet resolves `CefRuntimeLayout`'s paths. Moving all of it into
+# `install()` plus CPack is the right end state and is deliberately not done
+# here: it is a `CMakeLists.txt` change, and this task is three files under
+# `.github/`.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+# Read-only by default. Only `publish` widens it, and only to `contents: write`.
+permissions:
+  contents: read
+
+# One release at a time, and never cancelled part-way — a half-uploaded release
+# is worse than a slow one.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # The vcpkg registry commit `vcpkg.json` names as its `builtin-baseline`. The
+  # checkout below is made *at* this commit so the registry HEAD and the baseline
+  # agree, which is what makes version resolution deterministic rather than
+  # dependent on whatever the runner image happens to ship.
+  #
+  # Duplicated from `vcpkg.json` because a workflow cannot read JSON before it
+  # has a checkout; `verify-tag` asserts the two match.
+  VCPKG_BASELINE: "07f4812200df3d3c931c0c8a6081d3b21fe2bf9f"
+
+  # The monorepo's `.nvmrc` pins 24.13.0 and `ui/package.json` pins npm 11.6.2
+  # through `packageManager`. This repository is a submodule and carries no
+  # `.nvmrc` of its own, so the Node version is stated here.
+  NODE_VERSION: "24.13.0"
+
+  VCPKG_DISABLE_METRICS: "1"
+
+  # Corepack prompts before downloading the `packageManager` version, which in a
+  # non-interactive shell is a hang rather than a question.
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Is this tag allowed to become a release?
+  #
+  # Two questions, both cheap, both fatal: is the commit on `main`, and does the
+  # tag agree with the version the sources claim? The second matters because the
+  # extension bakes `project(VERSION)` into the binary — a `v0.2.0` tag over a
+  # `0.1.0` tree ships a binary that disagrees with its own release page.
+  # ---------------------------------------------------------------------------
+  verify-tag:
+    name: Verify the tag
+    # Explicit, but not `ubuntu-22.04`: this job reads git history and three
+    # manifests and produces no binary, so it has no compatibility floor to
+    # honour and no reason to sit on a deprecated image.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Refuse a tag that is not on main
+        run: |
+          set -euo pipefail
+
+          # `fetch-depth: 0` gives the full history of the tagged ref but does not
+          # create `origin/main`, so the branch ref is fetched explicitly.
+          git fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::${GITHUB_REF_NAME} points at ${GITHUB_SHA}, which is not an ancestor of origin/main." \
+                 "Releases are cut from main — merge the branch first, then tag the merge commit."
+            exit 1
+          fi
+
+          echo "${GITHUB_REF_NAME} -> ${GITHUB_SHA} is on main."
+
+      - name: Refuse a tag that disagrees with the sources
+        run: |
+          set -euo pipefail
+
+          tag_version="${GITHUB_REF_NAME#v}"
+          failed=0
+
+          # `project(sesh-ai-extension VERSION x.y.z ...)` — the version the
+          # library is compiled with.
+          cmake_version="$(sed -n 's/^[[:space:]]*VERSION[[:space:]]\{1,\}\([0-9][0-9.]*\)[[:space:]]*$/\1/p' CMakeLists.txt | head -n 1)"
+
+          # Both manifests are small and flat, so a one-line Python read is
+          # honest about the format rather than guessing with a regex.
+          vcpkg_version="$(python3 -c 'import json;print(json.load(open("vcpkg.json"))["version"])')"
+          ui_version="$(python3 -c 'import json;print(json.load(open("ui/package.json"))["version"])')"
+          vcpkg_baseline="$(python3 -c 'import json;print(json.load(open("vcpkg.json"))["builtin-baseline"])')"
+
+          for pair in "CMakeLists.txt:${cmake_version}" "vcpkg.json:${vcpkg_version}" "ui/package.json:${ui_version}"; do
+            file="${pair%%:*}"
+            found="${pair##*:}"
+
+            if [ "${found}" != "${tag_version}" ]; then
+              echo "::error file=${file}::${file} declares version ${found}, but the tag is ${GITHUB_REF_NAME}."
+              failed=1
+            fi
+          done
+
+          if [ "${vcpkg_baseline}" != "${VCPKG_BASELINE}" ]; then
+            echo "::error file=vcpkg.json::vcpkg.json pins builtin-baseline ${vcpkg_baseline}," \
+                 "but this workflow checks out vcpkg at ${VCPKG_BASELINE}. Update VCPKG_BASELINE in" \
+                 ".github/workflows/release.yml so the registry checkout and the manifest agree."
+            failed=1
+          fi
+
+          exit "${failed}"
+
+  # ---------------------------------------------------------------------------
+  # One archive per platform and architecture (requirement 21.6).
+  #
+  # `fail-fast: true` on purpose: a release where three of the four legs built
+  # is not a release. That applies as much to an architecture as to an
+  # operating system — a release missing its Intel Mac archive strands the
+  # producers least likely to have replaced their machines.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.platform_id }}
+    needs: verify-tag
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # One entry per platform REAPER and CEF have in common on the runners
+          # GitHub offers. `CMakeLists.txt` carries published digests for all six
+          # CEF platforms, so the set here is bounded by runner availability
+          # rather than by anything in this repository.
+          # `macos-15` rather than `macos-latest`, which is macOS 26 today.
+          # Paired with `macos-15-intel` below so the two macOS archives differ
+          # in architecture and in nothing else — same OS, same Xcode, same SDK
+          # — and built against an older SDK than macOS 26 offers, which is the
+          # safer side of a 13.0 deployment target to be on. Checked against
+          # `actions/runner-images` rather than assumed: `macos-13` was retired
+          # on 4 December 2025 and `macos-14` is deprecated, so the label that
+          # was correct a year ago is not a guide.
+          - platform_id: macos-arm64
+            runner: macos-15
+            library_extension: dylib
+            vcpkg_triplet: arm64-osx
+            archive_format: tar.gz
+            # Pinned so the CEF platform selection in `CMakeLists.txt` reads an
+            # explicit architecture rather than `CMAKE_SYSTEM_PROCESSOR`.
+            extra_cmake_arguments: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+
+          # Intel macOS is a required target, not a nice-to-have: REAPER has a
+          # large installed base on Intel Macs and they are the machines least
+          # likely to be replaced on Apple's schedule. Requirement 1.4 names the
+          # architecture for that reason.
+          #
+          # `macos-15-intel` is the last x86_64 image GitHub will offer. The
+          # previous one, `macos-13`, was retired on 4 December 2025, and this
+          # one is announced for retirement in **August 2027** — after which
+          # there is no hosted Intel runner at all. The three ways to keep
+          # shipping this binary past that date are written up in
+          # `docs/notes/intel-macos-after-hosted-runners.md` in the monorepo;
+          # none is chosen yet, because the cheapest of them depends on what
+          # CEF's packaging looks like by then.
+          #
+          # Until that date this leg is strictly better than any of them: it
+          # compiles natively and, unlike a cross-compile, it *runs the Catch2
+          # suite* on the architecture it ships.
+          - platform_id: macos-x64
+            runner: macos-15-intel
+            library_extension: dylib
+            vcpkg_triplet: x64-osx
+            archive_format: tar.gz
+            extra_cmake_arguments: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
+
+          # `windows-2025` rather than `windows-latest`, which resolves to the
+          # same image today. The pin does not avoid Visual Studio 2026 — both
+          # labels migrated to it over 8–15 June 2026 — it avoids the next
+          # migration arriving in a release build without a commit.
+          #
+          # Producers need the Visual C++ redistributable installed for this
+          # archive, because of the triplet below rather than the OS floor. See
+          # DEPENDENCIES.md.
+          - platform_id: windows-x64
+            runner: windows-2025
+            library_extension: dll
+            # `-static-md` rather than the default `x64-windows`: static vcpkg
+            # libraries against the dynamic CRT. The default would make
+            # json-schema-validator a DLL the extension has to ship beside
+            # itself, and `/MD` is forced on CEF below so one CRT is in play
+            # throughout. Unverified — see the file comment.
+            vcpkg_triplet: x64-windows-static-md
+            archive_format: zip
+            extra_cmake_arguments: "-DCEF_RUNTIME_LIBRARY_FLAG=/MD"
+
+          # `ubuntu-22.04` because glibc 2.35 is the declared Linux floor —
+          # Ubuntu 22.04 LTS and Debian 12. There is no flag for a glibc floor;
+          # the binary requires whatever the machine that linked it provided, so
+          # the only way to promise 2.35 is to link on 2.35. Building on
+          # `ubuntu-24.04` would ship an archive requiring glibc 2.39 and refuse
+          # to load for every producer on either of those distributions.
+          #
+          # **Deprecated, with a date.** Deprecation began 17 September 2026,
+          # jobs on this label fail during four ten-hour brownouts on 23 and 30
+          # March and 6 and 13 April 2027, and the image is fully unsupported on
+          # **17 April 2027** (actions/runner-images#14254). What replaces it is
+          # a digest-pinned container with glibc 2.35 on a supported runner, or a
+          # deliberately raised floor written into the spec and `CMakeLists.txt`.
+          # Not a quiet bump to a newer image, which decides the compatibility
+          # question by not asking it.
+          - platform_id: linux-x64
+            runner: ubuntu-22.04
+            library_extension: so
+            vcpkg_triplet: x64-linux
+            archive_format: tar.gz
+            extra_cmake_arguments: ""
+
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # CEF's CMake support on Linux reaches for GTK and X11 development
+      # packages. Precautionary rather than diagnosed: the configure has never
+      # been run, and an apt install is a cheaper way to find that out than a
+      # failed release.
+      - name: Install the Linux build packages CEF needs
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes \
+            libgtk-3-dev \
+            libx11-dev \
+            libxi-dev \
+            libnss3-dev
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # `ui/package.json` carries `packageManager: npm@11.6.2`, which only takes
+      # effect with corepack enabled.
+      - name: Enable corepack
+        run: corepack enable
+
+      # `npm ci`, never `npm install` — the lockfile is the input, and `install`
+      # would rewrite it mid-build.
+      - name: Install the UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      # Produces `ui/dist`, which is what the panel loads over `file://`. Runs
+      # before the CMake build because the staging step copies its output.
+      - name: Build the UI
+        working-directory: ui
+        run: npm run build
+
+      # A blobless clone checked out *at* the manifest's `builtin-baseline`, so
+      # the registry cannot resolve a version the manifest did not ask for. The
+      # runner images ship their own vcpkg, which is deliberately not used: its
+      # HEAD is whatever the image was built with.
+      - name: Check out vcpkg at the pinned baseline
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --quiet https://github.com/microsoft/vcpkg.git "${RUNNER_TEMP}/vcpkg"
+          git -C "${RUNNER_TEMP}/vcpkg" checkout --quiet "${VCPKG_BASELINE}"
+
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            "${RUNNER_TEMP}/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+          else
+            "${RUNNER_TEMP}/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          fi
+
+      # Every `REQUIRE` option is on. Configuration is willing to skip CEF, the
+      # REAPER SDK, and the shared library itself on a developer machine; a
+      # release build that quietly dropped any of them would produce an archive
+      # with nothing in it. DEPENDENCIES.md calls this exact combination out.
+      - name: Configure
+        run: |
+          set -euo pipefail
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSESH_AI_VCPKG_ROOT="${RUNNER_TEMP}/vcpkg" \
+            -DVCPKG_TARGET_TRIPLET="${{ matrix.vcpkg_triplet }}" \
+            -DSESH_AI_DOWNLOAD_REAPER_SDK=ON -DSESH_AI_REQUIRE_REAPER_SDK=ON \
+            -DSESH_AI_DOWNLOAD_CEF=ON -DSESH_AI_REQUIRE_CEF=ON \
+            -DSESH_AI_REQUIRE_EXTENSION_LIBRARY=ON \
+            ${{ matrix.extra_cmake_arguments }}
+
+      # `--config Release` is for the multi-config generator on Windows and is
+      # ignored elsewhere. The schema bundle verification is in ALL, so this also
+      # fails the release when `schemas/` does not match `MANIFEST.json`
+      # (requirement 20.3).
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # The suite the release is allowed to ship on. Same gate as CI, run again
+      # here rather than trusted from the commit's CI run, because the release
+      # build is configured differently — vcpkg Catch2 instead of the source
+      # fetch, and a CEF-linked library.
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
+      # Would this archive actually load on the oldest platform it claims?
+      #
+      # CEF decides that on macOS and Linux, not this repository. The script
+      # reads the framework's `minos` and `libcef.so`'s highest versioned glibc
+      # symbol off the distribution that was just downloaded and fails the
+      # release when either exceeds the floor `CMakeLists.txt` declares. On
+      # Linux it also measures the extension the step above produced, which is
+      # the check that catches the runner image moving underneath the floor
+      # rather than CEF outgrowing it.
+      #
+      # Run before staging rather than after, so a floor violation costs no
+      # archive and no upload. Skipped on Windows, where the floor is
+      # `_WIN32_WINNT` and nothing in the binary restates it.
+      #
+      # Unverified — no development machine here has a CEF distribution, so the
+      # first tag push is the first real exercise of it.
+      - name: Check CEF against the declared platform floor
+        if: runner.os != 'Windows'
+        run: ./scripts/check-cef-platform-floor.sh
+
+      # ---------------------------------------------------------------------
+      # Stage the install layout.
+      #
+      # Paths are globbed rather than constructed. `CMakeLists.txt` owns the CEF
+      # version string and the output directory layout, and a multi-config
+      # generator appends `Release/` to the latter — so asking the filesystem
+      # what was produced is both shorter and harder to get quietly wrong than
+      # duplicating either rule here.
+      # ---------------------------------------------------------------------
+      - name: Stage the package
+        id: stage
+        env:
+          PLATFORM_ID: ${{ matrix.platform_id }}
+          LIBRARY_EXTENSION: ${{ matrix.library_extension }}
+        run: |
+          set -euo pipefail
+
+          # `find | wc -l` rather than an array, because the macOS runner's
+          # /bin/bash is 3.2 and has no `mapfile`.
+          count_matches() {
+            find "$@" | wc -l | tr -d '[:space:]'
+          }
+
+          package_name="sesh-ai-reaper-extension-${GITHUB_REF_NAME}-${PLATFORM_ID}"
+          staging="${RUNNER_TEMP}/staging/${package_name}"
+          mkdir -p "${staging}"
+
+          # The extension REAPER loads. One file, and exactly one — more than one
+          # match means the output directory rules changed and the rest of this
+          # step is reasoning about the wrong tree.
+          library_matches="$(count_matches build/bin -type f -name "reaper_sesh_ai.${LIBRARY_EXTENSION}")"
+
+          if [ "${library_matches}" -ne 1 ]; then
+            echo "::error::expected exactly one reaper_sesh_ai.${LIBRARY_EXTENSION} under build/bin, found ${library_matches}."
+            find build/bin -type f -name "reaper_sesh_ai.*" || true
+            exit 1
+          fi
+
+          library_path="$(find build/bin -type f -name "reaper_sesh_ai.${LIBRARY_EXTENSION}" | head -n 1)"
+          cp "${library_path}" "${staging}/"
+
+          # The Vite output. `sesh_ai_ui/` is the directory name
+          # `tests/ui/ui_host_test.cpp` builds its `file://` URLs over.
+          mkdir -p "${staging}/sesh_ai_ui"
+          cp -R ui/dist/. "${staging}/sesh_ai_ui/"
+
+          # The CEF runtime. `CMakeLists.txt` extracted the distribution into
+          # third_party/cef — glob for it rather than rebuilding the version
+          # string, which carries '+' characters and is pinned in one place.
+          cef_matches="$(count_matches third_party/cef -maxdepth 1 -type d -name "cef_binary_*_minimal")"
+
+          if [ "${cef_matches}" -ne 1 ]; then
+            echo "::error::expected exactly one extracted CEF distribution under third_party/cef, found ${cef_matches}."
+            find third_party/cef -maxdepth 1 -type d || true
+            exit 1
+          fi
+
+          cef_root="$(find third_party/cef -maxdepth 1 -type d -name "cef_binary_*_minimal" | head -n 1)"
+
+          # Copied wholesale. Trimming unused locales and the Windows import
+          # library is a real saving and a packaging refinement; shipping too
+          # much is recoverable, shipping too little is a panel that does not
+          # open. On macOS the resources live inside the framework bundle, which
+          # is why there is no Resources directory to copy there.
+          mkdir -p "${staging}/sesh_ai_cef"
+          cp -R "${cef_root}/Release/." "${staging}/sesh_ai_cef/"
+
+          if [ -d "${cef_root}/Resources" ]; then
+            cp -R "${cef_root}/Resources/." "${staging}/sesh_ai_cef/"
+          fi
+
+          # Chromium's notices have to travel with the binaries — DEPENDENCIES.md
+          # is explicit that both of these ship to producers.
+          for notice in LICENSE.txt CREDITS.html; do
+            if [ -f "${cef_root}/${notice}" ]; then
+              cp "${cef_root}/${notice}" "${staging}/sesh_ai_cef/${notice}"
+            fi
+          done
+
+          cp LICENSE SECURITY.md DEPENDENCIES.md "${staging}/"
+
+          # Archive from the staging parent so the tree unpacks into its own
+          # directory rather than over whatever the producer extracted it into.
+          cd "${RUNNER_TEMP}/staging"
+
+          if [ "${{ matrix.archive_format }}" = "zip" ]; then
+            7z a -tzip -bso0 "${RUNNER_TEMP}/${package_name}.zip" "${package_name}"
+          else
+            tar --create --gzip --file "${RUNNER_TEMP}/${package_name}.tar.gz" "${package_name}"
+          fi
+
+          echo "package_path=${RUNNER_TEMP}/${package_name}.${{ matrix.archive_format }}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload the platform archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-${{ matrix.platform_id }}
+          path: ${{ steps.stage.outputs.package_path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Create the release and attach the four archives.
+  #
+  # A separate job so the release is created once, after every build leg
+  # succeeded, rather than each build racing to append to a release that may
+  # never be complete. This is also the only job with write access to anything.
+  # ---------------------------------------------------------------------------
+  publish:
+    name: Publish the release
+    needs: build
+    # Explicit, but not `ubuntu-22.04`: this job moves archives and calls `gh`.
+    # It compiles nothing, so no floor applies.
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download the platform archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: ${{ runner.temp }}/artifacts
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Checksum the archives
+        working-directory: ${{ runner.temp }}/artifacts
+        run: |
+          set -euo pipefail
+
+          # Four build legs, four archives: macOS arm64, macOS x86_64, Windows
+          # x64, Linux x64. Fewer means an upload was lost between jobs, which
+          # would otherwise show up as a release that silently omits a platform
+          # — and the one most likely to go missing is an architecture rather
+          # than an operating system, since the two macOS archives differ only
+          # in their suffix.
+          count="$(find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) | wc -l | tr -d ' ')"
+
+          if [ "${count}" -ne 4 ]; then
+            echo "::error::expected 4 platform archives, found ${count}."
+            ls -l
+            exit 1
+          fi
+
+          sha256sum ./*.tar.gz ./*.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # `gh` is preinstalled on the runner, so the release is created without a
+      # third-party action — one fewer dependency to pin and to trust.
+      #
+      # `--verify-tag` refuses to invent a tag that does not exist, which is the
+      # difference between publishing the commit that was tested and publishing
+      # whatever the default branch happens to be.
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        working-directory: ${{ runner.temp }}/artifacts
+        run: |
+          set -euo pipefail
+
+          gh release create "${GITHUB_REF_NAME}" \
+            --verify-tag \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            ./*.tar.gz ./*.zip SHA256SUMS.txt

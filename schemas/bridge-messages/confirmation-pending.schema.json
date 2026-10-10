@@ -1,0 +1,60 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/bridge-messages/confirmation-pending.schema.json",
+	"title": "Pending Confirmation View",
+	"description": "Payload of the view:confirmation_pending bridge message — the Confirmation Coordinator's PendingConfirmationView, serialized across the CEF bridge so the React UI can draw the prompt (Requirement 13.1). Not the confirm:request payload: the coordinator has already decoded that, and three of the fields here are its own conclusions rather than anything the agent sent. riskLevelReported and descriptionComplete are the whole reason this is a view model rather than a forwarded payload — re-deriving them in TypeScript would mean re-reading a payload the C++ side already read, and getting a different answer to a question about risk.",
+	"type": "object",
+	"properties": {
+		"requestId": {
+			"type": "string",
+			"description": "Correlation identifier of the confirm:request being answered. Never empty: a confirmation the UI's buttons could not produce a valid answer for is refused before it becomes a prompt.",
+			"minLength": 1,
+			"maxLength": 128
+		},
+		"actionSummary": {
+			"type": "string",
+			"description": "One line of plain language, as the agent wrote it. camelCase here while confirmation-request.schema.json spells the same field action_summary — that payload is the AgentCore harness's inline function arguments and matches the harness, while everything crossing this bridge is camelCase. The coordinator does the translation, which is the other half of why this is a view model.",
+			"maxLength": 1024
+		},
+		"details": {
+			"type": "string",
+			"description": "Longer prose, including which tracks, items, or files are affected. The blocking entities of a precondition refusal are enumerated in here rather than in a structured field — confirmation-request.schema.json says why. No minLength, unlike that schema: when a required field was missing the coordinator reports descriptionComplete false and leaves the string empty rather than inventing prose, so an empty value here is a signal the UI reads alongside that flag.",
+			"maxLength": 8192
+		},
+		"riskLevel": {
+			"type": "string",
+			"description": "How damaging the operation would be if unintended. Always present, and high when the coordinator could not read the agent's own assessment — understating the risk of a destructive operation is what gets a producer to approve something they would have read twice.",
+			"enum": [
+				"low",
+				"medium",
+				"high"
+			]
+		},
+		"riskLevelReported": {
+			"type": "boolean",
+			"description": "True when riskLevel is the agent's own assessment, false when it is the coordinator's conservative default. The UI says so rather than presenting a guess as a fact. No protocol schema carries this: it is a statement about what the extension could read, which only the extension knows.",
+			"default": false
+		},
+		"confirmationWindowSeconds": {
+			"type": "integer",
+			"description": "The server's confirmation window, for the countdown (Requirement 13.4). Carried on the view rather than left for the UI to reach back for, so the prompt and its deadline travel together. The extension does not enforce it — showing it is what keeps a quiet expiry from looking like the assistant ignoring the producer.",
+			"minimum": 1
+		},
+		"descriptionComplete": {
+			"type": "boolean",
+			"description": "False when any of the three fields confirmation-request.schema.json requires was missing or unreadable, which means the producer is being asked to authorise something the extension could not fully describe. What to do about that is the UI's call; the coordinator's job is to say so rather than quietly render a blank prompt.",
+			"default": false
+		}
+	},
+	"required": [
+		"requestId",
+		"actionSummary",
+		"details",
+		"riskLevel",
+		"riskLevelReported",
+		"confirmationWindowSeconds",
+		"descriptionComplete"
+	],
+	"additionalProperties": false,
+	"$comment": "Every field is required even where the C++ member has a default, because this document is a serialization contract rather than an input contract: the serialiser writes all seven, and a TypeScript type derived from this should not have to handle an absent boolean. Optionality is expressed by absence only where the C++ member is a std::optional — see confirmation-resolved.schema.json."
+}

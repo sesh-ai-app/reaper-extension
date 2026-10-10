@@ -1,0 +1,107 @@
+{
+	"application": {
+		"name": "Sesh AI",
+		"tagline": "Assistente de estúdio para o REAPER"
+	},
+	"conversation": {
+		"historyLabel": "Histórico da conversa",
+		"emptyHistory": "Peça algo e isso acontece na sua sessão. Experimente dizer uma faixa, um intervalo de tempo ou como você quer que soe.",
+		"producerLabel": "Você",
+		"assistantLabel": "Sesh AI"
+	},
+	"streamingResponse": {
+		"regionLabel": "Resposta",
+		"awaitingFirstText": "Escrevendo uma resposta."
+	},
+	"responseCompleteness": {
+		"mayBeIncomplete": "Parte desta resposta não chegou, então o que você vê pode estar incompleto.",
+		"missingSequences": "Fragmentos ausentes: {{sequences}}"
+	},
+	"toolActivity": {
+		"awaitingResponse": "O Sesh AI está trabalhando no seu pedido.",
+		"streamingResponse": "O Sesh AI está respondendo."
+	},
+	"producerPrompt": {
+		"inputLabel": "Perguntar ao Sesh AI",
+		"inputPlaceholder": "Descreva o que você quer fazer na sua sessão",
+		"send": "Enviar",
+		"charactersRemaining": "Caracteres restantes: {{remaining}}",
+		"refusal": {
+			"promptTextTooLong": "Este prompt é longo demais para enviar. Encurte e tente de novo.",
+			"transportUnavailable": "O painel não conseguiu alcançar a extensão, então nada foi enviado. Seu prompt continua aqui.",
+			"notSent": "Não foi possível enviar o prompt. Ele continua aqui, então você pode tentar de novo."
+		}
+	},
+	"connectionStatus": {
+		"connected": "Conectado à sua sessão.",
+		"reconnecting": "A conexão caiu. Reconectando.",
+		"disconnected": "Sem conexão com a sua sessão.",
+		"closeTheOtherReaperInstance": "Outra instância do REAPER está com esta sessão. Feche-a e este painel vai conectar — ele não continua tentando por conta própria.",
+		"signInAgain": "Seu acesso não é mais válido. Entre novamente para reconectar.",
+		"failedAttempts": "Tentativas falhas desde a última conexão: {{attempts}}"
+	},
+	"streamError": {
+		"heading": "Algo deu errado",
+		"dismiss": "Fechar",
+		"diagnosticsLabel": "Detalhe técnico",
+		"code": "Código: {{code}}",
+		"whileHandling": "Ao processar: {{envelopeType}}",
+		"byCode": {
+			"stage_creation_failed": "Não foi possível configurar a transmissão de áudio, então ainda não há nada para monitorar remotamente. Sua sessão não foi alterada.",
+			"participant_token_issuance_failed": "Não foi possível autorizar a transmissão de áudio, então ainda não há nada para monitorar remotamente. Sua sessão não foi alterada."
+		}
+	},
+	"confirmation": {
+		"heading": "Aprovar esta ação?",
+		"risk": "Risco: {{level}}",
+		"riskLevel": {
+			"low": "baixo",
+			"medium": "médio",
+			"high": "alto"
+		},
+		"riskNotReported": "O Sesh AI não informou o risco disto, então o risco mostrado acima é a suposição cautelosa da própria extensão, e não uma avaliação desta ação.",
+		"detailsLabel": "O que isto afeta",
+		"detailsUnavailable": "Nenhum detalhe adicional chegou com este pedido.",
+		"descriptionIncomplete": "Parte deste pedido não chegou, então a descrição acima pode não cobrir tudo o que esta ação faria.",
+		"timeRemaining": "Tempo restante para responder: {{remaining}}",
+		"timeElapsed": "O tempo para responder acabou. Aguardando para saber o que aconteceu.",
+		"windowExplanation": "Se isto não for respondido em tempo, a ação é cancelada e nada muda na sua sessão.",
+		"approve": "Aprovar",
+		"reject": "Rejeitar",
+		"answerSubmitted": "Sua resposta foi enviada. Aguardando a confirmação.",
+		"answerNotSent": "Sua resposta não saiu do painel, então nada foi respondido ainda. Tente de novo.",
+		"resolution": {
+			"approved": "Essa ação foi aprovada.",
+			"rejected": "Essa ação foi rejeitada.",
+			"expired": "O tempo para responder acabou, então a ação foi cancelada.",
+			"unknown": "Esse pedido já não está esperando resposta.",
+			"nothingWasChanged": "Nada na sua sessão foi alterado.",
+			"answeredHere": "Você respondeu aqui.",
+			"answeredOnThePhone": "Foi respondido no seu celular.",
+			"answeredElsewhere": "Foi respondido em outro dispositivo.",
+			"approvalDidNotTakeEffect": "Você aprovou, mas já tinha sido decidido de outra forma, então sua aprovação não teve efeito.",
+			"rejectionDidNotTakeEffect": "Você rejeitou, mas já tinha sido decidido de outra forma, então sua rejeição não teve efeito.",
+			"verdictDidNotTakeEffect": "Sua resposta chegou tarde demais para valer, então não teve efeito.",
+			"dismiss": "Fechar"
+		}
+	},
+	"scriptDownload": {
+		"regionLabel": "ReaScript gerado",
+		"explanation": "O Sesh AI escreveu este script para você ler e executar por conta própria. A extensão não executa o script.",
+		"download": "Baixar",
+		"downloadNamed": "Baixar {{fileName}}",
+		"size": "Tamanho: {{size}}",
+		"expiresAt": "Este link de download funciona até {{time}}.",
+		"expired": "Este link de download expirou. Peça o script ao Sesh AI de novo para receber um link novo."
+	},
+	"streamIngest": {
+		"regionLabel": "Dados da transmissão de áudio",
+		"explanation": "Cole estes valores no ReaCast para enviar o áudio da sua sessão.",
+		"ingestUrlLabel": "URL de destino",
+		"streamKeyLabel": "Chave de transmissão",
+		"participantLabel": "Participante",
+		"expiresAt": "Estes dados funcionam até {{time}}.",
+		"expired": "Estes dados de transmissão expiraram. Peça ao Sesh AI para configurar a transmissão de novo.",
+		"reissued": "Estes dados foram atualizados. Use a chave de transmissão mostrada aqui."
+	}
+}

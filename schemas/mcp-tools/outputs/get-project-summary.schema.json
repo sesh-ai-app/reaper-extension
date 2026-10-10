@@ -1,0 +1,98 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/get-project-summary.schema.json",
+	"title": "get_project_summary result",
+	"description": "What get_project_summary returns: the session's globals and its size, with no per-track detail. A read tool, so it carries no undo report — nothing changed. Every field is required, because a summary with a field missing is indistinguishable from a session that has no tempo, and the agent would have to guess which.",
+	"type": "object",
+	"properties": {
+		"projectName": {
+			"type": "string",
+			"description": "Name of the open REAPER project file, without path or extension. Empty for a session that has never been saved, which is worth telling the producer about before an alias is learned (Requirement 8.10).",
+			"maxLength": 512
+		},
+		"tempo": {
+			"type": "number",
+			"description": "Project tempo in beats per minute at the start of the timeline. The tempo at bar one only: tempoChangeCount says whether it stays there.",
+			"minimum": 1,
+			"maximum": 960
+		},
+		"timeSignature": {
+			"$ref": "#/definitions/timeSignature"
+		},
+		"sampleRate": {
+			"type": "integer",
+			"description": "Project sample rate in Hz.",
+			"minimum": 8000,
+			"maximum": 768000
+		},
+		"trackCount": {
+			"type": "integer",
+			"description": "Number of tracks in the project, excluding the master track, which sits outside the indexed track list.",
+			"minimum": 0
+		},
+		"projectLength": {
+			"type": "number",
+			"description": "Total project length in seconds.",
+			"minimum": 0
+		},
+		"markerCount": {
+			"type": "integer",
+			"description": "How many project markers exist. A count rather than the list, which is read with list_markers when the arrangement's labelling matters.",
+			"minimum": 0
+		},
+		"regionCount": {
+			"type": "integer",
+			"description": "How many project regions exist. Read the list with list_regions.",
+			"minimum": 0
+		},
+		"tempoChangeCount": {
+			"type": "integer",
+			"description": "How many tempo or time signature changes exist beyond the initial values. Zero means the reported tempo and time signature hold for the whole timeline; anything else means they do not, and list_tempo_changes is the only way to find out where. Carried because a session that changes tempo at bar 33 is otherwise invisible.",
+			"minimum": 0
+		}
+	},
+	"required": [
+		"projectName",
+		"tempo",
+		"timeSignature",
+		"sampleRate",
+		"trackCount",
+		"projectLength",
+		"markerCount",
+		"regionCount",
+		"tempoChangeCount"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"timeSignature": {
+			"type": "object",
+			"description": "A time signature.",
+			"properties": {
+				"numerator": {
+					"type": "integer",
+					"description": "Beats per measure.",
+					"minimum": 1,
+					"maximum": 64
+				},
+				"denominator": {
+					"type": "integer",
+					"description": "Note value that represents one beat.",
+					"enum": [
+						1,
+						2,
+						4,
+						8,
+						16,
+						32,
+						64
+					]
+				}
+			},
+			"required": [
+				"numerator",
+				"denominator"
+			],
+			"additionalProperties": false
+		}
+	}
+}

@@ -1,0 +1,83 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/create-marker.schema.json",
+	"title": "create_marker result",
+	"description": "What create_marker returns: the new marker, with the GUID that addresses it and the index REAPER assigned. The index is reported because it is what the producer sees, and the GUID because it is the only stable handle — REAPER renumbers markers as they are added and removed, so the index in this result may name a different marker by the next call. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"marker": {
+			"$ref": "#/definitions/markerDetail"
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"marker",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"markerDetail": {
+			"type": "object",
+			"description": "A project marker. The GUID is what addresses it in update_marker_or_region and delete_marker_or_region; the index is what the producer sees in REAPER and is renumbered as markers are added and removed, so it is reported but must not be used for addressing.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"index": {
+					"type": "integer",
+					"description": "Marker index as assigned by REAPER.",
+					"minimum": 0
+				},
+				"position": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"name": {
+					"type": "string",
+					"description": "Marker name.",
+					"maxLength": 512
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"guid",
+				"index",
+				"position",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"color": {
+			"type": "string",
+			"description": "Colour as a six-digit hexadecimal RGB string prefixed with #.",
+			"pattern": "^#[0-9A-Fa-f]{6}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

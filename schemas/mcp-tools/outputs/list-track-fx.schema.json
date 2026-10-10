@@ -1,0 +1,82 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/list-track-fx.schema.json",
+	"title": "list_track_fx result",
+	"description": "What list_track_fx returns: one track's FX chain in chain order, with each FX's bypass state and its index. The index is the prerequisite for every other FX tool — set_fx_bypass, set_fx_parameter, remove_fx, and get_fx_parameters all address an FX by chain position — which is why the order here is the chain's order and not a sort of the agent's choosing. A read tool, so no undo report.",
+	"type": "object",
+	"properties": {
+		"track": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"fx": {
+			"type": "array",
+			"description": "The FX on the track's chain, in chain order. Empty for a track with no FX, which is a normal answer and not a failure.",
+			"items": {
+				"$ref": "#/definitions/fxEntry"
+			},
+			"maxItems": 256
+		}
+	},
+	"required": [
+		"track",
+		"fx"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"fxEntry": {
+			"type": "object",
+			"description": "One FX on a track's chain. Chain position changes the sound, so the index is part of the identity rather than presentation detail.",
+			"properties": {
+				"index": {
+					"type": "integer",
+					"description": "Zero-based position on the chain, which is how every FX tool addresses it.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "FX name as REAPER reports it on the chain.",
+					"minLength": 1,
+					"maxLength": 512
+				},
+				"bypassed": {
+					"type": "boolean",
+					"description": "Whether the FX is bypassed. A bypassed FX keeps its settings, so this is what distinguishes \"not being heard\" from \"not there\"."
+				},
+				"offline": {
+					"type": "boolean",
+					"description": "Whether the FX is offline. An offline FX is neither processing nor loaded, which is why a parameter read against it returns nothing useful."
+				}
+			},
+			"required": [
+				"index",
+				"name",
+				"bypassed"
+			],
+			"additionalProperties": false
+		}
+	}
+}

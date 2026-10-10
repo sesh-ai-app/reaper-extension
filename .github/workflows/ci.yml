@@ -1,0 +1,444 @@
+# Continuous integration for the Sesh AI REAPER extension.
+#
+# Requirement 21: build on macOS (arm64 and x86_64), Windows, and Linux with
+# CMake (21.1), run the Catch2 suite on every one of them (21.2), verify the
+# vendored schemas against
+# MANIFEST.json as a build step (21.3), build the React/TypeScript assets before
+# the CMake build packages them (21.4), lint both C++ and TypeScript (21.5), and
+# pin every action by commit hash (21.7).
+#
+# ---------------------------------------------------------------------------
+# Every runner label is explicit, and that is a compatibility decision
+#
+# Not one `*-latest` label anywhere below. The reason is not build speed or
+# reproducibility in the abstract: **the runner image determines the binary's
+# compatibility floor.** With no deployment target set, macOS compatibility is
+# whatever the image's SDK defaulted to, and a glibc floor is simply whatever the
+# image provides — so `ubuntu-latest` means the extension's Linux floor is a
+# property of GitHub's rollout schedule rather than of this repository.
+#
+# That is not hypothetical. `ubuntu-latest` migrates from Ubuntu 24.04 to 26.04
+# gradually between 19 October and 19 November 2026, so inside that window the
+# same workflow can link against two different glibc versions on consecutive runs
+# with nothing in the log saying which. `windows-latest` and `windows-2025` moved
+# to Visual Studio 2026 over 8–15 June 2026, the same way.
+#
+# The repository already pins every other input to the build: actions by commit
+# SHA, vcpkg by registry baseline, CEF by version plus six published digests, the
+# REAPER SDK by two commits, socket.io-client-cpp by commit, npm by lockfile and
+# `packageManager`. The runner image was the last unpinned one.
+#
+# CMakeLists.txt is the other half — it declares the three floors (macOS 13
+# Ventura, Windows 10, glibc 2.35) so they are stated rather than inherited, and
+# `scripts/check-cef-platform-floor.sh` runs on the CEF legs below to fail the
+# build when CEF's own requirements exceed them.
+# ---------------------------------------------------------------------------
+# Every `uses:` is pinned to a full 40-character commit SHA with the release it
+# came from in a trailing comment. Never a tag: a tag is mutable, and the OpenSSF
+# Scorecard Pinned-Dependencies check — this repository carries the badge — reads
+# the ref. The comment is what makes the pin reviewable, and Dependabot (task
+# 21.2) updates both the SHA and the comment together.
+# ---------------------------------------------------------------------------
+#
+# ---------------------------------------------------------------------------
+# What this workflow is the first thing to do
+#
+# No development machine here has vcpkg, so nlohmann/json and
+# json-schema-validator are absent, the shared-library target is never created,
+# and until this workflow runs no `src/*.cpp` has ever been compiled — several
+# cannot even be syntax-checked, because they include nlohmann or CEF. There is
+# no CEF distribution either, so `src/ui/cef_browser_host.cpp` and
+# `src/entry/cef_panel_browser_creator.cpp` have never been compiled or linked and
+# the CEF arm of the source selection in CMakeLists.txt is unexercised.
+#
+# Two consequences are built into the job layout below rather than left to be
+# discovered.
+#
+# The `build-and-test` matrix runs each platform twice, with and without CEF, and
+# `fail-fast` is off. The CEF legs are the ones carrying hundreds of megabytes of
+# download, a wrapper library compiled from source, and two translation units that
+# have never seen a compiler. If they fail, the four CEF-less legs still compile
+# every other source and still run the whole Catch2 suite, so a CEF problem cannot
+# hide a test regression behind it.
+#
+# The schema bundle gets its own job even though `sesh_ai_verify_schema_bundle` is
+# already in the default build target. Requirement 20.2 is that the check needs no
+# network, and a job that does nothing but check it — no vcpkg, no SDK, no CEF —
+# is the only way that property is visible rather than asserted.
+# ---------------------------------------------------------------------------
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Read-only by default, which is the Scorecard Token-Permissions check and also
+# simply true: nothing here writes to the repository. A job that needs more should
+# ask for it at the job level.
+permissions:
+  contents: read
+
+# One run per ref. A force-push or a second push to a pull request supersedes the
+# run in flight rather than queueing behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The registry commit vcpkg.json pins as its `builtin-baseline`. It is repeated
+  # here because the checkout happens before anything can read the manifest, and
+  # the consistency check in the vcpkg step below is what keeps the two honest.
+  SESH_AI_VCPKG_BASELINE: 07f4812200df3d3c931c0c8a6081d3b21fe2bf9f
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Step 5, the C++ half. Needs no toolchain at all, so it reports in seconds and
+  # a whitespace mistake does not wait behind a CEF download.
+  #
+  # Deliberately not clang-format. The script says why at length; the short version
+  # is that a config matching this codebase's hand-wrapped style still rewrites
+  # 142 of 146 files, so gating on it would mean reformatting the tree.
+  # ---------------------------------------------------------------------------
+  lint-cpp:
+    name: Lint C++
+    # Explicit, but deliberately *not* `ubuntu-22.04`. This job produces no
+    # binary, so it has no compatibility floor to honour, and putting it on the
+    # deprecated image would mean a whitespace check that fails during the
+    # brownouts for no benefit. The same reasoning applies to the two jobs below.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check C++ house style
+        run: ./scripts/lint-cpp-house-style.sh
+
+  # ---------------------------------------------------------------------------
+  # Step 4 (requirements 20.2, 21.3). The same script the build runs as a step,
+  # invoked on its own with nothing else configured — which is the demonstration
+  # that verifying the bundle needs no network and no dependency.
+  # ---------------------------------------------------------------------------
+  verify-schema-bundle:
+    name: Verify vendored schemas
+    # Digest arithmetic over committed files — no binary, so no floor.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify the vendored schemas against MANIFEST.json
+        run: |
+          cmake -DSESH_AI_SCHEMA_DIRECTORY="${PWD}/schemas" \
+            -P cmake/VerifySchemaBundle.cmake
+
+  # ---------------------------------------------------------------------------
+  # Step 1, plus the TypeScript half of step 5.
+  #
+  # Runs once rather than per platform, and publishes `ui/dist` as an artifact the
+  # build legs download. The Vite output is platform-independent, so building it
+  # per leg would be eight chances for the eight legs to package different bytes.
+  #
+  # `npm run build` is `tsc --noEmit && vite build`, so there is no separate
+  # typecheck step — it would run tsc twice to learn the same thing.
+  # ---------------------------------------------------------------------------
+  ui:
+    name: Build and test the UI
+    # The Vite output is platform-independent JavaScript, so this image cannot
+    # affect what producers can run. Pinned anyway, so a Node or npm difference
+    # between images cannot change the bytes the build legs package.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # .nvmrc rather than a literal, so the version CI builds against and the
+          # version a contributor gets from `nvm use` cannot drift apart.
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      # The npm version is pinned by `packageManager` in ui/package.json, and
+      # corepack is what makes that field take effect instead of being a comment.
+      - name: Enable corepack so the pinned npm is used
+        run: corepack enable
+
+      # `npm ci`, never `npm install`: it installs exactly the lockfile and cannot
+      # write to it, so CI can never be the thing that changed a dependency.
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Lint TypeScript
+        working-directory: ui
+        run: npm run lint
+
+      - name: Run the UI test suite
+        working-directory: ui
+        run: npm test
+
+      - name: Build the UI static assets
+        working-directory: ui
+        run: npm run build
+
+      - name: Upload the built UI assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-static-assets
+          path: ui/dist
+          # The assets are what the CMake build packages, so an empty upload is a
+          # broken build leg later rather than a warning here.
+          if-no-files-found: error
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Steps 2, 3, and 4 (requirements 21.1, 21.2, 21.3).
+  #
+  # Eight legs: macOS arm64, macOS x86_64, Windows, and Linux, each with and
+  # without a CEF distribution. See the header for why CEF is a matrix axis
+  # rather than always on.
+  # ---------------------------------------------------------------------------
+  build-and-test:
+    name: ${{ matrix.os }}${{ matrix.cef && ' with CEF' || '' }}
+    needs: [ui]
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # Each leg's result is information the others do not carry. Cancelling the
+      # Windows build because macOS failed throws that away.
+      fail-fast: false
+      matrix:
+        # Four runners rather than three, because `macos-15-intel` is a target
+        # and not a variant of `macos-latest`. The two differ in the CEF
+        # distribution downloaded, the vcpkg triplet resolved, and the compiler's
+        # target architecture — so an arm64-only matrix would leave the Intel
+        # binary that the release workflow ships entirely unbuilt by CI.
+        #
+        # `macos-15-intel` is the last x86_64 image GitHub offers and is
+        # announced for retirement in August 2027. See the matrix comment in
+        # `release.yml` and `docs/notes/intel-macos-after-hosted-runners.md` in
+        # the monorepo.
+        #
+        # No `CMAKE_OSX_ARCHITECTURES` is passed on either macOS leg, unlike the
+        # release workflow: configuration falls back to `CMAKE_SYSTEM_PROCESSOR`,
+        # which on a native runner is already the right answer. The release
+        # workflow pins it because an archive named for an architecture should
+        # not depend on a fallback being correct.
+        #
+        # -------------------------------------------------------------------
+        # Why each label, rather than `*-latest`
+        #
+        # These four legs are the ones that produce binaries, so the image is the
+        # compatibility floor. See the header for the general argument.
+        #
+        #   `ubuntu-22.04` — glibc 2.35, which is the declared Linux floor
+        #     (Ubuntu 22.04 LTS and Debian 12). Building here is what makes that
+        #     floor real: a glibc requirement is not a compiler flag, it is
+        #     whatever the linking machine provides, so the only way to promise
+        #     2.35 is to link against 2.35.
+        #
+        #     **This image is deprecated. It became deprecated on 17 September
+        #     2026, GitHub will fail jobs on it during four ten-hour brownouts on
+        #     23 and 30 March and 6 and 13 April 2027, and it is fully
+        #     unsupported on 17 April 2027** (actions/runner-images#14254).
+        #     Before that date the migration is either a digest-pinned container
+        #     carrying glibc 2.35 on a newer runner, or a deliberate decision to
+        #     raise the floor — recorded in the spec and in `CMakeLists.txt`, with
+        #     producers on 22.04 and Debian 12 knowingly dropped. It is **not** a
+        #     bump to `ubuntu-24.04`, which would silently move the floor to
+        #     glibc 2.39 and hand the compatibility decision back to the image.
+        #
+        #   `macos-15` — the arm64 macOS 15 image, paired with `macos-15-intel`
+        #     on purpose: the two macOS legs then differ in architecture and in
+        #     nothing else, so an SDK or warning difference cannot appear on one
+        #     architecture only. It also builds against an older SDK than
+        #     `macos-latest` (macOS 26), which is the safer side of a 13.0
+        #     deployment target to be on. `macos-13`, the label that used to mean
+        #     "oldest", was retired on 4 December 2025 — recency is not a safe
+        #     assumption here, so these were checked against
+        #     `actions/runner-images` rather than inferred.
+        #
+        #   `windows-2025` — what `windows-latest` resolves to today. Both labels
+        #     moved to Visual Studio 2026 over 8–15 June 2026, so this pin does
+        #     not avoid that toolchain; it avoids the *next* migration happening
+        #     without a commit.
+        # -------------------------------------------------------------------
+        os: [ubuntu-22.04, macos-15, macos-15-intel, windows-2025]
+        cef: [false, true]
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # CEF's Linux CMake support resolves its system libraries through
+      # pkg-config, and GTK is what it looks for. Only the CEF legs need it.
+      - name: Install CEF's Linux build dependencies
+        if: matrix.cef && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            pkg-config \
+            libgtk-3-dev
+
+      # Step 1's output, put where the build will look for it. ui/dist is generated
+      # and git-ignored (requirement 27.2), so it does not exist after a checkout.
+      #
+      # Worth being exact about what this currently achieves: nothing in
+      # CMakeLists.txt reads ui/dist yet, so the assets are staged and then ignored.
+      # Requirement 21.4 is about *ordering* — the assets exist before the build runs
+      # — and that much is real and enforced by `needs: [ui]`. The packaging half of
+      # step 2 is still to be written, and when it is, this is already the directory
+      # it will find.
+      - name: Download the built UI assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ui-static-assets
+          path: ui/dist
+
+      # vcpkg's own default binary cache directory. Caching it means the three
+      # pinned ports are compiled once per platform per manifest change instead of
+      # once per run. The key carries the baseline as well as the manifest hash,
+      # because a baseline move can change what a version resolves to.
+      - name: Restore the vcpkg binary cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/vcpkg/archives
+            ~/AppData/Local/vcpkg/archives
+          key: vcpkg-${{ runner.os }}-${{ env.SESH_AI_VCPKG_BASELINE }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-${{ runner.os }}-${{ env.SESH_AI_VCPKG_BASELINE }}-
+
+      # vcpkg is fetched as a single commit rather than cloned. The repository is
+      # large and none of its history is wanted — what is wanted is exactly the
+      # baseline vcpkg.json names, which is also the only thing that makes the
+      # dependency versions reproducible.
+      #
+      # The path is exported as VCPKG_ROOT rather than passed as
+      # -DSESH_AI_VCPKG_ROOT because of Windows. `$GITHUB_WORKSPACE` there is a
+      # backslash path, and CMake reads backslashes in a `-D` argument as escapes;
+      # `cygpath -m` turns it into the mixed form (`D:/a/...`) that CMake and the
+      # vcpkg toolchain both accept. CMakeLists.txt already reads the environment
+      # variable as its second search location.
+      - name: Set up vcpkg at the pinned baseline
+        shell: bash
+        run: |
+          set -o errexit
+          set -o nounset
+
+          manifest_baseline="$(
+            grep -o '"builtin-baseline"[[:space:]]*:[[:space:]]*"[0-9a-f]\{40\}"' vcpkg.json \
+              | grep -o '[0-9a-f]\{40\}'
+          )"
+
+          if [ "${manifest_baseline}" != "${SESH_AI_VCPKG_BASELINE}" ]; then
+            echo "The baseline in vcpkg.json (${manifest_baseline}) and the one in" >&2
+            echo "ci.yml (${SESH_AI_VCPKG_BASELINE}) disagree. Update the workflow." >&2
+            exit 1
+          fi
+
+          vcpkg_root="${GITHUB_WORKSPACE}/vcpkg"
+
+          git init --quiet "${vcpkg_root}"
+          git -C "${vcpkg_root}" remote add origin https://github.com/microsoft/vcpkg.git
+          git -C "${vcpkg_root}" fetch --quiet --depth 1 origin "${SESH_AI_VCPKG_BASELINE}"
+          git -C "${vcpkg_root}" checkout --quiet FETCH_HEAD
+
+          if [ "${RUNNER_OS}" = "Windows" ]; then
+            "${vcpkg_root}/bootstrap-vcpkg.bat" -disableMetrics
+            vcpkg_root="$(cygpath -m "${vcpkg_root}")"
+          else
+            "${vcpkg_root}/bootstrap-vcpkg.sh" -disableMetrics
+          fi
+
+          echo "VCPKG_ROOT=${vcpkg_root}" >> "${GITHUB_ENV}"
+
+      # Step 2. The three REQUIRE options are the point of this line: everything
+      # configuration is willing to skip on a developer machine is a failure here,
+      # so a build with no shared library, no SDK, or no CEF cannot pass. The
+      # command follows the one DEPENDENCIES.md documents for CI.
+      #
+      # No generator is named, so each platform gets its default — Visual Studio on
+      # Windows, which needs no separate developer-environment activation step, and
+      # Makefiles elsewhere. `--config Release` below covers the multi-config case
+      # and CMAKE_BUILD_TYPE the single-config one.
+      #
+      # The CEF distribution is downloaded rather than cached. It extracts to well
+      # over a gigabyte per platform, which would crowd the vcpkg caches out of the
+      # repository's cache budget and cost more to restore than to fetch, and a
+      # cache key would have to repeat the version pin that CMakeLists.txt already
+      # owns.
+      - name: Configure CMake
+        shell: bash
+        run: |
+          set -o errexit
+          set -o nounset
+
+          configure_arguments=(
+            -S .
+            -B build
+            -DCMAKE_BUILD_TYPE=Release
+            -DSESH_AI_DOWNLOAD_REAPER_SDK=ON
+            -DSESH_AI_REQUIRE_REAPER_SDK=ON
+            -DSESH_AI_REQUIRE_EXTENSION_LIBRARY=ON
+          )
+
+          if [ "${{ matrix.cef }}" = "true" ]; then
+            configure_arguments+=(
+              -DSESH_AI_DOWNLOAD_CEF=ON
+              -DSESH_AI_REQUIRE_CEF=ON
+            )
+          fi
+
+          cmake "${configure_arguments[@]}"
+
+      # Step 2, and step 4 a second time: `sesh_ai_verify_schema_bundle` is in ALL,
+      # so this is the build step requirement 21.3 asks for, with the standalone job
+      # above as the proof it needs nothing else to run.
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      # Step 3. `--no-tests=error` matters more than it looks: the test target is
+      # skipped when Catch2 is unavailable, and without this flag that situation is
+      # a green run that tested nothing.
+      - name: Run the Catch2 suite
+        run: ctest --test-dir build --build-config Release --output-on-failure --no-tests=error
+
+      # The floors stop being aspirational here.
+      #
+      # CEF sets the real minimum on macOS and Linux. It is a Chromium build and
+      # not ours to recompile, so if it demands more than CMakeLists.txt declares,
+      # this leg produces a library that compiles, links, and then fails to load
+      # on exactly the machines the floor existed for — a failure that appears in
+      # a producer's REAPER log and nowhere in this one. The script reads CEF's
+      # own numbers off the downloaded distribution (`vtool -show-build` for
+      # `minos` on macOS, the highest versioned glibc symbol in `libcef.so` on
+      # Linux) and fails the build when either exceeds the declared floor.
+      #
+      # Only on the CEF legs, since there is nothing to measure otherwise, and
+      # only on macOS and Linux: CEF's Windows minimum is not stated in the binary
+      # in a form worth parsing, and `_WIN32_WINNT` on the library target is where
+      # that floor lives instead. The `if` is what keeps that a skip rather than a
+      # pass — the script itself refuses to run on an unexpected platform.
+      #
+      # Unverified. There is no CEF distribution on any development machine here,
+      # so this step is the first thing that will ever run these commands against
+      # a real framework. Written to fail loudly on a missing path or tool rather
+      # than succeed quietly, because a check that passes for the wrong reason is
+      # worse than no check at all.
+      - name: Check CEF against the declared platform floor
+        if: matrix.cef && runner.os != 'Windows'
+        run: ./scripts/check-cef-platform-floor.sh

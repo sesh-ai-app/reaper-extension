@@ -1,0 +1,80 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/apply-fx-destructively.schema.json",
+	"title": "apply_fx_destructively result",
+	"description": "What apply_fx_destructively returns: which items had the chain rendered into their audio, and whether the original take survived. replacedExistingTake is the field that says how recoverable this is — a new take leaves the original alongside the processed audio, replacing it does not, and REAPER's undo is then the only way back. The items are named by GUID because rendering a take mints new take audio and the producer needs to be told which of their items were changed, not just how many. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"track": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"processedItemGuids": {
+			"type": "array",
+			"description": "The items whose audio now contains the FX chain, in timeline order. Every item on the track when the call named none.",
+			"items": {
+				"$ref": "#/definitions/guid"
+			},
+			"maxItems": 4096
+		},
+		"replacedExistingTake": {
+			"type": "boolean",
+			"description": "True when the processed audio replaced the take that was there, false when it was added as a new take alongside the original. The producer's route back differs entirely between the two, so this is not a restatement of the input."
+		},
+		"appliedFxCount": {
+			"type": "integer",
+			"description": "How many FX from the chain were rendered in. Bypassed FX are not applied, so this can be lower than the chain length — and a producer who bypassed a plugin to audition without it would not expect it baked in.",
+			"minimum": 0
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"track",
+		"processedItemGuids",
+		"replacedExistingTake",
+		"appliedFxCount",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

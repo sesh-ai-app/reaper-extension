@@ -1,0 +1,104 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/list-tempo-changes.schema.json",
+	"title": "list_tempo_changes result",
+	"description": "What list_tempo_changes returns: the project tempo map, which the project context snapshot reports only as a count. The read change_tempo_map depends on — merging points into a map that has not been read is changing the tempo blind, and changing the tempo moves every beat-based item and automation point in the session. The initial tempo is included as an entry rather than left implicit, so the map reads as a complete picture of what the tempo does across the timeline. A read tool, so no undo report.",
+	"type": "object",
+	"properties": {
+		"tempoChanges": {
+			"type": "array",
+			"description": "The tempo map entries in range, ordered by position. A session that never changes tempo returns the single entry at position zero carrying the project tempo and time signature.",
+			"items": {
+				"$ref": "#/definitions/tempoChangeEntry"
+			},
+			"maxItems": 100
+		},
+		"totalInRange": {
+			"$ref": "#/definitions/totalInRange"
+		},
+		"truncated": {
+			"$ref": "#/definitions/truncated"
+		}
+	},
+	"required": [
+		"tempoChanges",
+		"totalInRange",
+		"truncated"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"tempoChangeEntry": {
+			"type": "object",
+			"description": "One entry in the project tempo map. The time signature is reported on every entry, resolved rather than inherited: REAPER's map lets a point carry a tempo without a signature, and an agent reading an entry in isolation would otherwise have to walk backwards to find out what bar length applies.",
+			"properties": {
+				"position": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"tempo": {
+					"type": "number",
+					"description": "Tempo in beats per minute from this point onward.",
+					"minimum": 1,
+					"maximum": 960
+				},
+				"timeSignature": {
+					"$ref": "#/definitions/timeSignature"
+				},
+				"linearTransition": {
+					"type": "boolean",
+					"description": "Whether the tempo ramps linearly to the next entry rather than jumping at this one."
+				}
+			},
+			"required": [
+				"position",
+				"tempo",
+				"timeSignature",
+				"linearTransition"
+			],
+			"additionalProperties": false
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"timeSignature": {
+			"type": "object",
+			"description": "A time signature.",
+			"properties": {
+				"numerator": {
+					"type": "integer",
+					"description": "Beats per measure.",
+					"minimum": 1,
+					"maximum": 64
+				},
+				"denominator": {
+					"type": "integer",
+					"description": "Note value that represents one beat.",
+					"enum": [
+						1,
+						2,
+						4,
+						8,
+						16,
+						32,
+						64
+					]
+				}
+			},
+			"required": [
+				"numerator",
+				"denominator"
+			],
+			"additionalProperties": false
+		},
+		"totalInRange": {
+			"type": "integer",
+			"description": "How many entries matched the call's filters before maximumResults capped the returned list. Equal to the length of the returned array when nothing was capped. Carried so that a capped read is visible to the agent rather than a silent truncation it reasons over as if it were the whole set (Requirement 23.9).",
+			"minimum": 0
+		},
+		"truncated": {
+			"type": "boolean",
+			"description": "True when totalInRange exceeds the number of entries returned. Stated rather than left to be inferred from comparing two numbers, so the agent has to notice it before telling the producer the list is complete."
+		}
+	}
+}

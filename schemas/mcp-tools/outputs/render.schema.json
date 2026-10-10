@@ -1,0 +1,135 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/render.schema.json",
+	"title": "render result",
+	"description": "What render returns: what was added to REAPER's render queue. Nothing has been written when this result arrives — the tool queues and returns immediately, and the files appear only when the producer renders the queue, so the agent must say that plainly rather than reporting a completed render (Requirement 12.3). This is the one mutating-classified tool that carries no undo report: a queued render writes no project state the undo system tracks, its undo effect is none, and a turn whose only action is a render does not offer \"revert all\" (Requirement 12.7). queuedJobCount is not always one — stems_via_master is implemented as a solo-queue-unsolo loop and queues one job per selected track (Requirement 12.6).",
+	"type": "object",
+	"properties": {
+		"queuedJobCount": {
+			"type": "integer",
+			"description": "How many jobs were added to REAPER's render queue. One for a master mix. One per selected track for stems_via_master, which queues a separate master-mix render with each track soloed in turn, because REAPER has no render setting for passing tracks through the master individually.",
+			"minimum": 1
+		},
+		"source": {
+			"type": "string",
+			"description": "What the queued jobs will write, echoed because it decides whether the result is a mix, a set of stems that sums back to it, or a set that does not. Worth restating to the producer when they asked for stems_via_master, which is usually not what they want.",
+			"enum": [
+				"master_mix",
+				"stems",
+				"stems_via_master"
+			]
+		},
+		"bounds": {
+			"type": "string",
+			"description": "The span the queued jobs will write.",
+			"enum": [
+				"region",
+				"time_selection",
+				"project"
+			]
+		},
+		"startSeconds": {
+			"type": "number",
+			"description": "Resolved start of the span in seconds. Resolved rather than echoed: `region` and `time_selection` both name a span indirectly, and a producer told \"queued the chorus\" should have been told which seconds that turned out to be.",
+			"minimum": 0
+		},
+		"endSeconds": {
+			"type": "number",
+			"description": "Resolved end of the span in seconds.",
+			"exclusiveMinimum": 0
+		},
+		"regionGuid": {
+			"$ref": "#/definitions/guid"
+		},
+		"tracks": {
+			"$ref": "#/definitions/trackReferences"
+		},
+		"outputDirectory": {
+			"type": "string",
+			"description": "Directory the files will be written to, resolved through REAPER's wildcards. The one path the producer needs in order to find the result once they render the queue.",
+			"minLength": 1,
+			"maxLength": 4096
+		},
+		"outputPaths": {
+			"type": "array",
+			"description": "Every file the queued jobs will write, resolved in full. Enumerated rather than counted because collision detection ran against exactly these paths before anything was queued, and the producer approving an overwrite needs to see which files (Requirement 12.4).",
+			"items": {
+				"type": "string",
+				"minLength": 1,
+				"maxLength": 4096
+			},
+			"minItems": 1,
+			"maxItems": 512
+		},
+		"outputFormat": {
+			"type": "string",
+			"description": "Audio format the queued jobs will write.",
+			"enum": [
+				"wav",
+				"mp3",
+				"flac"
+			]
+		},
+		"bitDepth": {
+			"type": "integer",
+			"description": "Bit depth the queued jobs will write. Absent for mp3, which has none.",
+			"enum": [
+				16,
+				24,
+				32
+			]
+		},
+		"sampleRate": {
+			"type": "integer",
+			"description": "Sample rate the queued jobs will write, in Hz. Resolved to the project's rate when the call omitted one, so the agent reports the rate that will actually be used.",
+			"minimum": 8000,
+			"maximum": 768000
+		}
+	},
+	"required": [
+		"queuedJobCount",
+		"source",
+		"bounds",
+		"startSeconds",
+		"endSeconds",
+		"outputDirectory",
+		"outputPaths",
+		"outputFormat"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"trackReferences": {
+			"type": "array",
+			"description": "The tracks a single shared operation was applied to, in the order the call supplied them. Every selector resolved, since an unresolved or ambiguous one refuses the whole call rather than partially applying it.",
+			"items": {
+				"$ref": "#/definitions/trackReference"
+			},
+			"minItems": 1,
+			"maxItems": 512
+		},
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		}
+	}
+}

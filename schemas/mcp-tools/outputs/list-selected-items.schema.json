@@ -1,0 +1,108 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/list-selected-items.schema.json",
+	"title": "list_selected_items result",
+	"description": "What list_selected_items returns: the media items in the requested scope, each with the track it sits on and the GUID every item tool addresses it by. The scope the call used is echoed because the three scopes can return very different sets from the same session, and \"the producer has nothing selected\" and \"the time selection is empty\" need different things said to them. A read tool, so no undo report.",
+	"type": "object",
+	"properties": {
+		"scope": {
+			"type": "string",
+			"description": "Which scope this result covers, echoed so that an empty list can be explained rather than just reported.",
+			"enum": [
+				"selected_items",
+				"selected_tracks",
+				"time_selection"
+			]
+		},
+		"items": {
+			"type": "array",
+			"description": "The items in scope, in timeline order and then track order. Empty when the producer has nothing selected, which is a complete answer.",
+			"items": {
+				"$ref": "#/definitions/selectedItem"
+			},
+			"maxItems": 4096
+		},
+		"totalInRange": {
+			"$ref": "#/definitions/totalInRange"
+		},
+		"truncated": {
+			"$ref": "#/definitions/truncated"
+		}
+	},
+	"required": [
+		"scope",
+		"items",
+		"totalInRange",
+		"truncated"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"selectedItem": {
+			"type": "object",
+			"description": "One media item. The track name travels with the track GUID so the agent can tell the producer which items it means — they cannot see a GUID, and \"three items on the Kick track\" is what they can act on.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"trackGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"trackName": {
+					"type": "string",
+					"description": "Name of the track the item sits on.",
+					"maxLength": 512
+				},
+				"position": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"length": {
+					"type": "number",
+					"description": "Item length in seconds.",
+					"minimum": 0
+				},
+				"takeName": {
+					"type": "string",
+					"description": "Name of the item's active take, which is what REAPER shows on the item. Present when the call asked for take names, which it does by default.",
+					"maxLength": 512
+				},
+				"muted": {
+					"type": "boolean",
+					"description": "Whether the item is muted."
+				},
+				"selected": {
+					"type": "boolean",
+					"description": "Whether the item is part of the producer's current selection. Always true under the selected_items scope, and worth reading under the other two — an item inside the time selection that the producer has not highlighted is one they may not expect to be touched."
+				}
+			},
+			"required": [
+				"guid",
+				"trackGuid",
+				"trackName",
+				"position",
+				"length",
+				"muted",
+				"selected"
+			],
+			"additionalProperties": false
+		},
+		"totalInRange": {
+			"type": "integer",
+			"description": "How many entries matched the call's filters before maximumResults capped the returned list. Equal to the length of the returned array when nothing was capped. Carried so that a capped read is visible to the agent rather than a silent truncation it reasons over as if it were the whole set (Requirement 23.9).",
+			"minimum": 0
+		},
+		"truncated": {
+			"type": "boolean",
+			"description": "True when totalInRange exceeds the number of entries returned. Stated rather than left to be inferred from comparing two numbers, so the agent has to notice it before telling the producer the list is complete."
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		}
+	}
+}

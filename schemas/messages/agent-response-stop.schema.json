@@ -1,0 +1,88 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/agent-response-stop.schema.json",
+	"title": "Agent Response Stop",
+	"description": "Payload of the stream:agent_response_stop envelope. Sent once the AgentCore harness stream ends, carrying the assembled response text, why the harness stopped, and the token usage reported by the metadata event. Token counts are null when the harness omitted usage metrics.",
+	"type": "object",
+	"properties": {
+		"conversationId": {
+			"type": "string",
+			"description": "ULID of the conversation the response belongs to.",
+			"minLength": 1,
+			"maxLength": 64
+		},
+		"turnId": {
+			"type": "string",
+			"description": "ULID of the agent turn that just finished streaming.",
+			"minLength": 1,
+			"maxLength": 64
+		},
+		"messageId": {
+			"type": "string",
+			"description": "ULID the assembled assistant message was persisted under.",
+			"minLength": 1,
+			"maxLength": 64
+		},
+		"text": {
+			"type": "string",
+			"description": "Full assembled assistant response text, so a client that joined mid-stream can render the complete message."
+		},
+		"stopReason": {
+			"type": [
+				"string",
+				"null"
+			],
+			"description": "Stop reason from the harness messageStop event — for example end_turn, tool_use, or max_tokens. Null when the stream ended without a messageStop event."
+		},
+		"deltaCount": {
+			"type": "integer",
+			"description": "How many text deltas were relayed for this turn.",
+			"minimum": 0
+		},
+		"inputTokens": {
+			"type": [
+				"integer",
+				"null"
+			],
+			"description": "Input token count from the harness metadata event. Null when the harness omitted usage metrics.",
+			"minimum": 0
+		},
+		"outputTokens": {
+			"type": [
+				"integer",
+				"null"
+			],
+			"description": "Output token count from the harness metadata event. Null when the harness omitted usage metrics.",
+			"minimum": 0
+		},
+		"totalTokens": {
+			"type": [
+				"integer",
+				"null"
+			],
+			"description": "Total token count for the invocation. Null when the harness omitted usage metrics.",
+			"minimum": 0
+		},
+		"latencyMilliseconds": {
+			"type": [
+				"integer",
+				"null"
+			],
+			"description": "Harness-reported stream latency in milliseconds. Null when the harness omitted stream metrics.",
+			"minimum": 0
+		}
+	},
+	"required": [
+		"conversationId",
+		"turnId",
+		"messageId",
+		"text",
+		"stopReason",
+		"deltaCount",
+		"inputTokens",
+		"outputTokens",
+		"totalTokens",
+		"latencyMilliseconds"
+	],
+	"additionalProperties": false
+}
