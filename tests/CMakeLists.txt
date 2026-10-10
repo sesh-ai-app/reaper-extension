@@ -37,6 +37,13 @@ target_link_libraries(sesh_ai_tests PRIVATE Catch2::Catch2WithMain)
 # JSON dependencies. See the interface target's comment in the root CMakeLists.
 target_link_libraries(sesh_ai_tests PRIVATE sesh_ai_compiler_warnings)
 
+# The declared platform floor, which on Windows means _WIN32_WINNT. Linked for
+# the same reason as the warnings: the suite compiles most of this codebase's
+# logic, so it should see the same API surface the library does rather than
+# whatever the Windows SDK defaults to. PRIVATE, so Catch2 built from source here
+# does not inherit it.
+target_link_libraries(sesh_ai_tests PRIVATE sesh_ai_platform_floor)
+
 # The queue pair is the one thing in this codebase whose contract is about threads,
 # so the suite actually runs threads against it rather than reasoning about the
 # mutex. That needs pthreads linked explicitly on Linux.

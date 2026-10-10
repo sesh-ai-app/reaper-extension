@@ -1,6 +1,110 @@
 cmake_minimum_required(VERSION 3.21)
 
 # ---------------------------------------------------------------------------
+# Supported-platform floors
+#
+# The oldest macOS, Windows, and glibc the extension supports, declared here
+# rather than inherited from whichever CI runner image GitHub happens to serve.
+#
+# That distinction is the whole reason this section exists. With nothing set, the
+# binary's compatibility is whatever the build machine's SDK defaulted to — so
+# the floor silently tracks the runner image, and the images move: `ubuntu-latest`
+# migrates from Ubuntu 24.04 to 26.04 gradually between 19 October and
+# 19 November 2026, which during that window means two different glibc versions
+# for the same workflow with nothing in the log saying which. The runner labels
+# are pinned in `.github/workflows/` for the same reason; this is the half that
+# makes the floor a property of the build rather than of the machine.
+#
+# Each number, and why it is that number:
+#
+#   macOS 13.0 Ventura — set by CEF, not chosen. The pinned distribution is
+#     Chromium 154 (SESH_AI_CEF_VERSION below), and Chromium 151 dropped macOS 12
+#     Monterey, so Ventura is the oldest CEF permits. Moving lower would mean
+#     downgrading four Chromium milestones and re-deriving six published digests.
+#     Applies to both arm64 and x86_64; Intel macOS is a required target
+#     (requirement 1.4).
+#
+#   glibc 2.35 — Ubuntu 22.04 LTS and Debian 12, the oldest distributions worth
+#     supporting for a DAW extension. A glibc floor is not a flag: it is whatever
+#     the machine that links the binary provides, which is why the Linux CI leg
+#     builds on `ubuntu-22.04` rather than on a newer image.
+#
+#   Windows 10, as _WIN32_WINNT=0x0A00 — the oldest Windows still receiving
+#     updates (10 22H2). Little in this codebase binds to it, which is the point:
+#     stating it means a future API call above the floor fails at compile time
+#     here rather than at load time on a producer's machine.
+#
+# CEF sets the real minimum on macOS and Linux, so declaring a floor is only half
+# the job — `scripts/check-cef-platform-floor.sh` reads CEF's own requirements off
+# the downloaded distribution and fails the build when they exceed these numbers.
+# It parses the two values below out of this file, so these `set()` lines are the
+# single declaration and the check cannot drift from them.
+# ---------------------------------------------------------------------------
+
+# A cache variable rather than a plain one, and set before project() rather than
+# after: CMake runs its compiler checks during project(), and a deployment target
+# arriving afterwards would not have been in force for them. The cache default
+# leaves -DCMAKE_OSX_DEPLOYMENT_TARGET=<other> able to override it.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING
+	"Oldest macOS the extension supports"
+)
+
+set(SESH_AI_LINUX_GLIBC_FLOOR "2.35" CACHE STRING
+	"Oldest glibc the extension supports — Ubuntu 22.04 LTS and Debian 12"
+)
+
+set(SESH_AI_WINDOWS_NT_FLOOR "0x0A00" CACHE STRING
+	"Oldest Windows the extension supports, as a _WIN32_WINNT value — 0x0A00 is Windows 10"
+)
+
+# Carrying the macOS floor into vcpkg's own port builds.
+#
+# This is a real gap rather than belt-and-braces. json-schema-validator and
+# Catch2 are compiled from source by vcpkg, in separate CMake invocations that
+# know nothing about this project's cache. If they are built with a higher minos
+# than the extension declares, the dylib says 13.0, links cleanly, and then fails
+# to load on 13 — on exactly the machines the floor existed for.
+#
+# vcpkg's documented control for this is the triplet variable
+# VCPKG_OSX_DEPLOYMENT_TARGET, and the only way to set a triplet variable is to
+# write a triplet file: vcpkg's maintainers say so directly, and the toolchain at
+# the pinned baseline (scripts/toolchains/osx.cmake) never reads it from anywhere
+# else. Carrying it that way would mean two overlay triplet files, an overlay path
+# to plumb through, and new triplet names in the release workflow's matrix.
+#
+# So the environment variable is used instead, which is both less machinery and
+# strictly broader. CMake documents MACOSX_DEPLOYMENT_TARGET as the default for
+# CMAKE_OSX_DEPLOYMENT_TARGET when nothing sets it explicitly, and every port
+# build vcpkg launches is a child process of this configure, so each inherits it.
+# It also reaches ports that are not CMake-based, where
+# VCPKG_OSX_DEPLOYMENT_TARGET is known not to apply at all (microsoft/vcpkg#10038)
+# — clang reads the environment variable directly. None of this repository's three
+# ports is autotools today, but the next one might be.
+#
+# Set unconditionally rather than only when absent, on purpose: an inherited value
+# that disagreed with the cache variable would mean the extension and its
+# dependencies compiled against different floors, which is the exact failure this
+# is here to prevent.
+#
+# One caveat worth knowing before chasing it: the deployment target is not part of
+# vcpkg's package ABI hash, so a binary-cache entry built before this was added
+# can be restored without it. The CI cache key covers the baseline and the
+# manifest, not this — if a floor violation ever appears on a cache hit, clear the
+# vcpkg archives rather than looking for a bug here.
+if(CMAKE_HOST_APPLE)
+	set(ENV{MACOSX_DEPLOYMENT_TARGET} "${CMAKE_OSX_DEPLOYMENT_TARGET}")
+
+	# vcpkg filters the environment it hands to port builds, and this list is how
+	# a variable survives that. Appended rather than assigned, so a developer who
+	# is already keeping other variables does not lose them.
+	if(DEFINED ENV{VCPKG_KEEP_ENV_VARS})
+		set(ENV{VCPKG_KEEP_ENV_VARS} "$ENV{VCPKG_KEEP_ENV_VARS};MACOSX_DEPLOYMENT_TARGET")
+	else()
+		set(ENV{VCPKG_KEEP_ENV_VARS} "MACOSX_DEPLOYMENT_TARGET")
+	endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Dependency toolchain (vcpkg)
 #
 # C++ dependencies are declared in vcpkg.json, which pins exact versions against
@@ -59,10 +163,24 @@ else()
 	)
 endif()
 
+# C as well as CXX, and not because this project has any C in it.
+#
+# CEF's own CMake support requires it. `cef_variables.cmake` probes compiler flags
+# with `CHECK_C_COMPILER_FLAG`, which fails outright — "C: needs to be enabled
+# before use" — in a project that declared only CXX. It is reached through
+# `find_package(CEF)` further down, so a CEF-less build never hit it and the first
+# CI run with a real distribution failed at configure time on every CEF leg.
+#
+# Declared here rather than as a conditional `enable_language(C)` beside
+# `find_package(CEF)`. The conditional version is narrower and would keep a
+# CEF-less build from probing for a compiler it does not use, but the probe costs
+# nothing — every toolchain carrying a C++ compiler carries a C one — and a
+# FetchContent dependency that wants C would otherwise fail the same way, one
+# dependency at a time.
 project(sesh-ai-extension
 	VERSION 0.1.0
 	DESCRIPTION "Sesh AI — REAPER extension"
-	LANGUAGES CXX
+	LANGUAGES C CXX
 )
 
 # ---------------------------------------------------------------------------
@@ -117,6 +235,34 @@ if(MSVC)
 	target_compile_options(sesh_ai_compiler_warnings INTERFACE /W4)
 else()
 	target_compile_options(sesh_ai_compiler_warnings INTERFACE -Wall -Wextra)
+endif()
+
+# ---------------------------------------------------------------------------
+# Platform floor, as a compile definition
+#
+# A sibling of the warnings target rather than a global definition, for the same
+# reason the warnings are not global: the build compiles third-party code it did
+# not write — libcef_dll_wrapper, socket.io-client-cpp, Catch2 when vcpkg did not
+# supply it — and none of it should inherit this project's choices. So this is a
+# usage requirement that the same two targets opt into, the shared library and the
+# Catch2 suite.
+#
+# Only Windows has anything to put here. The macOS floor is a compiler and linker
+# flag that CMake derives from CMAKE_OSX_DEPLOYMENT_TARGET, and the glibc floor is
+# a property of the machine doing the linking, not a definition — which is why
+# both are enforced against CEF in CI instead.
+# ---------------------------------------------------------------------------
+
+add_library(sesh_ai_platform_floor INTERFACE)
+
+if(WIN32)
+	# Stated before any system header is included, which is what makes it bind:
+	# sdkddkver.h picks a default only when _WIN32_WINNT is undefined, so setting
+	# it here means an API newer than Windows 10 is a compile error rather than a
+	# binary that loads on the build machine and not on a producer's.
+	target_compile_definitions(sesh_ai_platform_floor INTERFACE
+		_WIN32_WINNT=${SESH_AI_WINDOWS_NT_FLOOR}
+	)
 endif()
 
 # REAPER loads the extension as a shared library, so everything linked into it
@@ -177,6 +323,23 @@ set(SESH_AI_EXTENSION_OUTPUT_NAME "reaper_sesh_ai")
 
 message(STATUS "Sesh AI extension: configuring for ${SESH_AI_PLATFORM_NAME}")
 message(STATUS "Sesh AI extension: output name ${SESH_AI_EXTENSION_OUTPUT_NAME}${SESH_AI_EXTENSION_SUFFIX}")
+
+# The floor this build is actually producing, reported rather than assumed. The
+# complaint the floors answer is that nothing in a build log said what the binary
+# would run on; a line per platform is the cheap half of fixing that.
+if(SESH_AI_PLATFORM_MACOS)
+	message(STATUS
+		"Sesh AI extension: macOS deployment target ${CMAKE_OSX_DEPLOYMENT_TARGET} "
+		"(vcpkg ports inherit it through MACOSX_DEPLOYMENT_TARGET)"
+	)
+elseif(SESH_AI_PLATFORM_WINDOWS)
+	message(STATUS "Sesh AI extension: Windows floor _WIN32_WINNT=${SESH_AI_WINDOWS_NT_FLOOR} (Windows 10)")
+else()
+	message(STATUS
+		"Sesh AI extension: glibc floor ${SESH_AI_LINUX_GLIBC_FLOOR} — a property of the linking "
+		"machine, so build on ubuntu-22.04 or a container with that glibc"
+	)
+endif()
 
 # ---------------------------------------------------------------------------
 # Dependencies: JSON and schema validation
@@ -935,6 +1098,7 @@ else()
 
 	target_link_libraries(sesh_ai_extension PRIVATE
 		sesh_ai_compiler_warnings
+		sesh_ai_platform_floor
 		nlohmann_json::nlohmann_json
 		nlohmann_json_schema_validator::validator
 	)

@@ -37,7 +37,12 @@ permissions: read-all
 jobs:
   analysis:
     name: Scorecard analysis
-    runs-on: ubuntu-latest
+    # Explicit, like every other label in this repository's workflows. This job
+    # produces no binary, so unlike the build legs it has no compatibility floor
+    # to honour and no reason to sit on the deprecated `ubuntu-22.04` — but a
+    # floating label is still a build input nobody pinned, and leaving one behind
+    # in the workflow that scores this repository's pinning would be a poor joke.
+    runs-on: ubuntu-24.04
 
     permissions:
       # Upload the SARIF result to the code scanning dashboard.

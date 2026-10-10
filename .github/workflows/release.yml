@@ -42,6 +42,24 @@
 #     exists, not a working UI.
 #
 # ---------------------------------------------------------------------------
+# Every runner label is explicit
+#
+# No `*-latest` anywhere. For the four build legs that is a product decision
+# rather than a hygiene one: **the runner image determines what the archive will
+# run on.** A macOS deployment target and a `_WIN32_WINNT` floor are declared in
+# `CMakeLists.txt`, but a glibc floor is simply whatever the linking machine
+# provides, so `ubuntu-latest` would make the Linux archive's compatibility a
+# property of GitHub's rollout schedule — and that schedule is live: the label
+# moves from Ubuntu 24.04 to 26.04 gradually between 19 October and 19 November
+# 2026.
+#
+# The archives are the thing producers download, so the floors are enforced here
+# too and not merely in CI: `scripts/check-cef-platform-floor.sh` runs on the
+# macOS and Linux legs below and fails the release when CEF's own minimum exceeds
+# what the build declares. Shipping an archive that installs and then cannot load
+# is the one failure mode a release workflow has no excuse for.
+#
+# ---------------------------------------------------------------------------
 # Packaging lives here rather than in CMake, for now
 #
 # `CMakeLists.txt` has no `install()` rules, so the staging below is the only
@@ -106,7 +124,10 @@ jobs:
   # ---------------------------------------------------------------------------
   verify-tag:
     name: Verify the tag
-    runs-on: ubuntu-latest
+    # Explicit, but not `ubuntu-22.04`: this job reads git history and three
+    # manifests and produces no binary, so it has no compatibility floor to
+    # honour and no reason to sit on a deprecated image.
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out the tagged commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -188,8 +209,16 @@ jobs:
           # GitHub offers. `CMakeLists.txt` carries published digests for all six
           # CEF platforms, so the set here is bounded by runner availability
           # rather than by anything in this repository.
+          # `macos-15` rather than `macos-latest`, which is macOS 26 today.
+          # Paired with `macos-15-intel` below so the two macOS archives differ
+          # in architecture and in nothing else — same OS, same Xcode, same SDK
+          # — and built against an older SDK than macOS 26 offers, which is the
+          # safer side of a 13.0 deployment target to be on. Checked against
+          # `actions/runner-images` rather than assumed: `macos-13` was retired
+          # on 4 December 2025 and `macos-14` is deprecated, so the label that
+          # was correct a year ago is not a guide.
           - platform_id: macos-arm64
-            runner: macos-latest
+            runner: macos-15
             library_extension: dylib
             vcpkg_triplet: arm64-osx
             archive_format: tar.gz
@@ -221,8 +250,16 @@ jobs:
             archive_format: tar.gz
             extra_cmake_arguments: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
 
+          # `windows-2025` rather than `windows-latest`, which resolves to the
+          # same image today. The pin does not avoid Visual Studio 2026 — both
+          # labels migrated to it over 8–15 June 2026 — it avoids the next
+          # migration arriving in a release build without a commit.
+          #
+          # Producers need the Visual C++ redistributable installed for this
+          # archive, because of the triplet below rather than the OS floor. See
+          # DEPENDENCIES.md.
           - platform_id: windows-x64
-            runner: windows-latest
+            runner: windows-2025
             library_extension: dll
             # `-static-md` rather than the default `x64-windows`: static vcpkg
             # libraries against the dynamic CRT. The default would make
@@ -233,8 +270,23 @@ jobs:
             archive_format: zip
             extra_cmake_arguments: "-DCEF_RUNTIME_LIBRARY_FLAG=/MD"
 
+          # `ubuntu-22.04` because glibc 2.35 is the declared Linux floor —
+          # Ubuntu 22.04 LTS and Debian 12. There is no flag for a glibc floor;
+          # the binary requires whatever the machine that linked it provided, so
+          # the only way to promise 2.35 is to link on 2.35. Building on
+          # `ubuntu-24.04` would ship an archive requiring glibc 2.39 and refuse
+          # to load for every producer on either of those distributions.
+          #
+          # **Deprecated, with a date.** Deprecation began 17 September 2026,
+          # jobs on this label fail during four ten-hour brownouts on 23 and 30
+          # March and 6 and 13 April 2027, and the image is fully unsupported on
+          # **17 April 2027** (actions/runner-images#14254). What replaces it is
+          # a digest-pinned container with glibc 2.35 on a supported runner, or a
+          # deliberately raised floor written into the spec and `CMakeLists.txt`.
+          # Not a quiet bump to a newer image, which decides the compatibility
+          # question by not asking it.
           - platform_id: linux-x64
-            runner: ubuntu-latest
+            runner: ubuntu-22.04
             library_extension: so
             vcpkg_triplet: x64-linux
             archive_format: tar.gz
@@ -330,6 +382,26 @@ jobs:
       # fetch, and a CEF-linked library.
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure
+
+      # Would this archive actually load on the oldest platform it claims?
+      #
+      # CEF decides that on macOS and Linux, not this repository. The script
+      # reads the framework's `minos` and `libcef.so`'s highest versioned glibc
+      # symbol off the distribution that was just downloaded and fails the
+      # release when either exceeds the floor `CMakeLists.txt` declares. On
+      # Linux it also measures the extension the step above produced, which is
+      # the check that catches the runner image moving underneath the floor
+      # rather than CEF outgrowing it.
+      #
+      # Run before staging rather than after, so a floor violation costs no
+      # archive and no upload. Skipped on Windows, where the floor is
+      # `_WIN32_WINNT` and nothing in the binary restates it.
+      #
+      # Unverified — no development machine here has a CEF distribution, so the
+      # first tag push is the first real exercise of it.
+      - name: Check CEF against the declared platform floor
+        if: runner.os != 'Windows'
+        run: ./scripts/check-cef-platform-floor.sh
 
       # ---------------------------------------------------------------------
       # Stage the install layout.
@@ -442,7 +514,9 @@ jobs:
   publish:
     name: Publish the release
     needs: build
-    runs-on: ubuntu-latest
+    # Explicit, but not `ubuntu-22.04`: this job moves archives and calls `gh`.
+    # It compiles nothing, so no floor applies.
+    runs-on: ubuntu-24.04
 
     permissions:
       contents: write

@@ -301,3 +301,51 @@ cmake -S . -B build \
   -DSESH_AI_DOWNLOAD_CEF=ON -DSESH_AI_REQUIRE_CEF=ON \
   -DSESH_AI_REQUIRE_EXTENSION_LIBRARY=ON
 ```
+
+## Supported platforms
+
+| Platform | Floor | Set by |
+|---|---|---|
+| macOS, arm64 and x86_64 | **13.0 Ventura** | `CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt` |
+| Windows, x64 | **Windows 10 22H2** | `_WIN32_WINNT=0x0A00` on the library target |
+| Linux, x64 | **glibc 2.35** — Ubuntu 22.04 LTS, Debian 12 | the image the Linux build leg links on |
+
+Declared in the build system rather than inherited from a CI runner image, which
+is the whole point of having them written down. With nothing set, the binary's
+compatibility is whatever the build machine's SDK or glibc happened to be, so the
+floor silently tracks GitHub's image rollout — and those move: `ubuntu-latest`
+migrates from Ubuntu 24.04 to 26.04 between 19 October and 19 November 2026. Every
+runner label in `.github/workflows/` is pinned for that reason.
+
+**macOS 13 is set by CEF, not chosen.** The pinned distribution is Chromium 154,
+and Chromium 151 dropped macOS 12 Monterey, so Ventura is the oldest CEF permits.
+Going lower would mean four Chromium milestones back and six re-derived digests.
+
+**glibc has no flag.** A shared object requires whatever version the machine that
+linked it provided, so the only way to promise 2.35 is to link on 2.35 — which is
+why the Linux legs build on `ubuntu-22.04` rather than on a newer image.
+
+`scripts/check-cef-platform-floor.sh` is what keeps these honest. It runs on the
+macOS and Linux CEF legs in both workflows, reads CEF's own minimum off the
+downloaded distribution — `minos` from the framework's `LC_BUILD_VERSION`, and the
+highest versioned glibc symbol in `libcef.so` — and fails the build when either
+exceeds the floor above. CEF sets the real minimum on both platforms, and without
+the check a mismatch produces a library that compiles, links, and then fails to
+load on exactly the machines the floor existed for.
+
+### Windows producers need the Visual C++ redistributable
+
+The release workflow builds Windows with the `x64-windows-static-md` triplet:
+vcpkg's static libraries against the **dynamic** CRT. So `json-schema-validator`
+is linked in rather than shipped as a DLL, and CEF is forced to `/MD` so one CRT
+is in play throughout — but the CRT itself is not in the archive.
+
+That makes the Microsoft Visual C++ Redistributable for Visual Studio 2015–2022
+(x64) an install-time requirement, independent of the Windows version floor. Most
+machines running REAPER already have it, since REAPER's own installer and most
+plugins need it. It is documented here rather than solved with a build flag:
+`x64-windows-static` would avoid it and give two CRTs in one process, which is a
+worse problem than a prerequisite.
+
+Unverified, like everything else about the Windows leg — no Windows machine here
+has configured this build.

@@ -8,6 +8,31 @@
 # pin every action by commit hash (21.7).
 #
 # ---------------------------------------------------------------------------
+# Every runner label is explicit, and that is a compatibility decision
+#
+# Not one `*-latest` label anywhere below. The reason is not build speed or
+# reproducibility in the abstract: **the runner image determines the binary's
+# compatibility floor.** With no deployment target set, macOS compatibility is
+# whatever the image's SDK defaulted to, and a glibc floor is simply whatever the
+# image provides — so `ubuntu-latest` means the extension's Linux floor is a
+# property of GitHub's rollout schedule rather than of this repository.
+#
+# That is not hypothetical. `ubuntu-latest` migrates from Ubuntu 24.04 to 26.04
+# gradually between 19 October and 19 November 2026, so inside that window the
+# same workflow can link against two different glibc versions on consecutive runs
+# with nothing in the log saying which. `windows-latest` and `windows-2025` moved
+# to Visual Studio 2026 over 8–15 June 2026, the same way.
+#
+# The repository already pins every other input to the build: actions by commit
+# SHA, vcpkg by registry baseline, CEF by version plus six published digests, the
+# REAPER SDK by two commits, socket.io-client-cpp by commit, npm by lockfile and
+# `packageManager`. The runner image was the last unpinned one.
+#
+# CMakeLists.txt is the other half — it declares the three floors (macOS 13
+# Ventura, Windows 10, glibc 2.35) so they are stated rather than inherited, and
+# `scripts/check-cef-platform-floor.sh` runs on the CEF legs below to fail the
+# build when CEF's own requirements exceed them.
+# ---------------------------------------------------------------------------
 # Every `uses:` is pinned to a full 40-character commit SHA with the release it
 # came from in a trailing comment. Never a tag: a tag is mutable, and the OpenSSF
 # Scorecard Pinned-Dependencies check — this repository carries the badge — reads
@@ -79,7 +104,11 @@ jobs:
   # ---------------------------------------------------------------------------
   lint-cpp:
     name: Lint C++
-    runs-on: ubuntu-latest
+    # Explicit, but deliberately *not* `ubuntu-22.04`. This job produces no
+    # binary, so it has no compatibility floor to honour, and putting it on the
+    # deprecated image would mean a whitespace check that fails during the
+    # brownouts for no benefit. The same reasoning applies to the two jobs below.
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -96,7 +125,8 @@ jobs:
   # ---------------------------------------------------------------------------
   verify-schema-bundle:
     name: Verify vendored schemas
-    runs-on: ubuntu-latest
+    # Digest arithmetic over committed files — no binary, so no floor.
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -120,7 +150,10 @@ jobs:
   # ---------------------------------------------------------------------------
   ui:
     name: Build and test the UI
-    runs-on: ubuntu-latest
+    # The Vite output is platform-independent JavaScript, so this image cannot
+    # affect what producers can run. Pinned anyway, so a Node or npm difference
+    # between images cannot change the bytes the build legs package.
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -202,7 +235,46 @@ jobs:
         # which on a native runner is already the right answer. The release
         # workflow pins it because an archive named for an architecture should
         # not depend on a fallback being correct.
-        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
+        #
+        # -------------------------------------------------------------------
+        # Why each label, rather than `*-latest`
+        #
+        # These four legs are the ones that produce binaries, so the image is the
+        # compatibility floor. See the header for the general argument.
+        #
+        #   `ubuntu-22.04` — glibc 2.35, which is the declared Linux floor
+        #     (Ubuntu 22.04 LTS and Debian 12). Building here is what makes that
+        #     floor real: a glibc requirement is not a compiler flag, it is
+        #     whatever the linking machine provides, so the only way to promise
+        #     2.35 is to link against 2.35.
+        #
+        #     **This image is deprecated. It became deprecated on 17 September
+        #     2026, GitHub will fail jobs on it during four ten-hour brownouts on
+        #     23 and 30 March and 6 and 13 April 2027, and it is fully
+        #     unsupported on 17 April 2027** (actions/runner-images#14254).
+        #     Before that date the migration is either a digest-pinned container
+        #     carrying glibc 2.35 on a newer runner, or a deliberate decision to
+        #     raise the floor — recorded in the spec and in `CMakeLists.txt`, with
+        #     producers on 22.04 and Debian 12 knowingly dropped. It is **not** a
+        #     bump to `ubuntu-24.04`, which would silently move the floor to
+        #     glibc 2.39 and hand the compatibility decision back to the image.
+        #
+        #   `macos-15` — the arm64 macOS 15 image, paired with `macos-15-intel`
+        #     on purpose: the two macOS legs then differ in architecture and in
+        #     nothing else, so an SDK or warning difference cannot appear on one
+        #     architecture only. It also builds against an older SDK than
+        #     `macos-latest` (macOS 26), which is the safer side of a 13.0
+        #     deployment target to be on. `macos-13`, the label that used to mean
+        #     "oldest", was retired on 4 December 2025 — recency is not a safe
+        #     assumption here, so these were checked against
+        #     `actions/runner-images` rather than inferred.
+        #
+        #   `windows-2025` — what `windows-latest` resolves to today. Both labels
+        #     moved to Visual Studio 2026 over 8–15 June 2026, so this pin does
+        #     not avoid that toolchain; it avoids the *next* migration happening
+        #     without a commit.
+        # -------------------------------------------------------------------
+        os: [ubuntu-22.04, macos-15, macos-15-intel, windows-2025]
         cef: [false, true]
 
     steps:
@@ -344,3 +416,29 @@ jobs:
       # a green run that tested nothing.
       - name: Run the Catch2 suite
         run: ctest --test-dir build --build-config Release --output-on-failure --no-tests=error
+
+      # The floors stop being aspirational here.
+      #
+      # CEF sets the real minimum on macOS and Linux. It is a Chromium build and
+      # not ours to recompile, so if it demands more than CMakeLists.txt declares,
+      # this leg produces a library that compiles, links, and then fails to load
+      # on exactly the machines the floor existed for — a failure that appears in
+      # a producer's REAPER log and nowhere in this one. The script reads CEF's
+      # own numbers off the downloaded distribution (`vtool -show-build` for
+      # `minos` on macOS, the highest versioned glibc symbol in `libcef.so` on
+      # Linux) and fails the build when either exceeds the declared floor.
+      #
+      # Only on the CEF legs, since there is nothing to measure otherwise, and
+      # only on macOS and Linux: CEF's Windows minimum is not stated in the binary
+      # in a form worth parsing, and `_WIN32_WINNT` on the library target is where
+      # that floor lives instead. The `if` is what keeps that a skip rather than a
+      # pass — the script itself refuses to run on an unexpected platform.
+      #
+      # Unverified. There is no CEF distribution on any development machine here,
+      # so this step is the first thing that will ever run these commands against
+      # a real framework. Written to fail loudly on a missing path or tool rather
+      # than succeed quietly, because a check that passes for the wrong reason is
+      # worse than no check at all.
+      - name: Check CEF against the declared platform floor
+        if: matrix.cef && runner.os != 'Windows'
+        run: ./scripts/check-cef-platform-floor.sh

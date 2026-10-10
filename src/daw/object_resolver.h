@@ -97,6 +97,7 @@
 #include <cctype>
 #include <cstddef>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -112,6 +113,12 @@ class MediaTrack;
 
 // REAPER's opaque project handle, same arrangement.
 class ReaProject;
+
+// Defined by the SDK as `typedef struct reaper_plugin_info_t { ... }
+// reaper_plugin_info_t;`, so naming the struct here is a forward declaration of the
+// same type rather than a second one. The REAPER-facing sources below take it so
+// that they can resolve their own function pointers from its `GetFunc`.
+struct reaper_plugin_info_t;
 
 namespace sesh_ai::daw
 {
@@ -1166,6 +1173,24 @@ namespace sesh_ai::daw
 	// Declared here, defined in object_resolver.cpp, which is the only translation
 	// unit in this component that includes the SDK. Held as pointers to
 	// forward-declared SDK types so this header stays includable from the suite.
+	//
+	// Each resolves the handful of API functions it needs from the registration
+	// table's `GetFunc` at construction, following `reaper_render_host.h` and the
+	// other REAPER-backed adapters, rather than through the SDK's
+	// REAPERAPI_IMPLEMENT import table. Two reasons:
+	//
+	//   - REAPERAPI_IMPLEMENT needs exactly one translation unit to provide storage
+	//     for every imported pointer, and that is global mutable state which has to
+	//     be initialised before anything else in the library runs. Resolving locally
+	//     means neither of these classes depends on that having happened.
+	//   - A function an older REAPER does not expose then stays a value this object
+	//     can see and degrade on, rather than a null call through a pointer nobody
+	//     owns. The degradation is unchanged from before: a missing function yields
+	//     an empty or partial snapshot, which resolution refuses on.
+	//
+	// The two overlap on several functions, and each resolving its own copy is the
+	// intent — there is no shared REAPER object here to depend on, which is what
+	// keeps the SDK confined to one translation unit per component.
 	// ---------------------------------------------------------------------------
 
 	// Walks REAPER's track list and reads a GUID and a name per track.
@@ -1185,17 +1210,34 @@ namespace sesh_ai::daw
 		using StructuralRoleProvider =
 			std::function<std::optional<context::StructuralRole>(const std::string& track_guid)>;
 
-		// Null project means REAPER's active project, which is what its API takes zero
-		// to mean.
+		// `plugin_info` is the pointer REAPER passed to ReaperPluginEntry; it stays
+		// valid for the lifetime of the loaded extension. Null project means REAPER's
+		// active project, which is what its API takes zero to mean.
 		explicit ReaperTrackListSource(
+			reaper_plugin_info_t* plugin_info,
 			ReaProject* project = nullptr,
 			StructuralRoleProvider structural_role_provider = {});
+		~ReaperTrackListSource() override;
 
 		std::vector<ResolvableTrack> tracks_in_project_order() const override;
 
+		// The resolved function pointers. Declared but not defined here: the
+		// definition is in the translation unit, so the SDK types its members are
+		// made of never reach this header. Public only because that translation
+		// unit's own helpers name the type; nothing outside can do anything with an
+		// incomplete struct.
+		struct reaper_track_list_api;
+
 	private:
+		std::unique_ptr<reaper_track_list_api> api_;
 		ReaProject* project_;
 		StructuralRoleProvider structural_role_provider_;
+
+		// Kept for the same reason the hosts that publish it keep it: a partial
+		// snapshot is easier to explain when the names are to hand. Private, because
+		// `TrackListSource` does not carry a usability report and widening it would
+		// reach every test double for no behaviour this component changes.
+		std::vector<std::string> unresolved_function_names_;
 	};
 
 	// Enumerates REAPER's markers and regions and reads a GUID, name, bounds, and
@@ -1203,12 +1245,23 @@ namespace sesh_ai::daw
 	class ReaperMarkerAndRegionSource final : public MarkerAndRegionSource
 	{
 	public:
-		explicit ReaperMarkerAndRegionSource(ReaProject* project = nullptr);
+		// Same arrangement as the track list source: plugin info first so the four
+		// API functions can be resolved at construction, null project meaning the
+		// active one.
+		explicit ReaperMarkerAndRegionSource(
+			reaper_plugin_info_t* plugin_info,
+			ReaProject* project = nullptr);
+		~ReaperMarkerAndRegionSource() override;
 
 		std::vector<ResolvableMarkerOrRegion> markers_and_regions_in_enumeration_order() const override;
 
+		// Declared but not defined here, as above.
+		struct reaper_marker_and_region_api;
+
 	private:
+		std::unique_ptr<reaper_marker_and_region_api> api_;
 		ReaProject* project_;
+		std::vector<std::string> unresolved_function_names_;
 	};
 }
 
