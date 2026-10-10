@@ -540,7 +540,11 @@ TEST_CASE("learning an alias the track already holds changes nothing and says so
 
 	const std::size_t writes_before = storage.keys_written.size();
 
-	for (const std::string& same : {"the kick", "The Kick", "  THE   KICK  ", "the kick"}) {
+	// By value rather than `const std::string&`. The braced list is `const char*`, so a
+	// reference would bind to a temporary constructed per iteration — which GCC reports
+	// as `-Wrange-loop-construct` and clang does not. The copy is what the loop was
+	// doing anyway, said out loud.
+	for (const std::string same : {"the kick", "The Kick", "  THE   KICK  ", "the kick"}) {
 		const LearnedAlias learned = store.learn_track_alias(track, same);
 
 		INFO("relearning " << same);
@@ -689,7 +693,7 @@ TEST_CASE("forgetting one alias leaves the rest of the track's vocabulary in ord
 	AliasStore store{storage};
 	const TrackHandle track = storage.handle_for(0);
 
-	for (const std::string& alias : {"the kick", "kik", "bd", "boom"}) {
+	for (const std::string alias : {"the kick", "kik", "bd", "boom"}) {
 		REQUIRE(store.learn_track_alias(track, alias).learned());
 	}
 
@@ -754,7 +758,7 @@ TEST_CASE("forgetting every alias removes the key rather than storing an empty o
 	AliasStore store{storage};
 	const TrackHandle track = storage.handle_for(0);
 
-	for (const std::string& alias : {"the kick", "kik", "bd"}) {
+	for (const std::string alias : {"the kick", "kik", "bd"}) {
 		REQUIRE(store.learn_track_alias(track, alias).learned());
 	}
 
