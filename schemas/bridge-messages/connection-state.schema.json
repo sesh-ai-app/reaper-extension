@@ -1,0 +1,63 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/bridge-messages/connection-state.schema.json",
+	"title": "Connection State View",
+	"description": "Payload of the view:connection_state bridge message — the Transport Client's connection_status, serialized across the CEF bridge so the UI can show whether the extension is talking to the server (Requirement 3.4). No envelope carries this: the connection's own state cannot arrive over the connection, which is the clearest case in the bridge contract for a view model rather than a forwarded payload. Produced on the network thread, handed to the main thread through the queue pair, and published from the tick — never written to CEF directly (Requirements 2.3, 22.2).",
+	"type": "object",
+	"properties": {
+		"state": {
+			"type": "string",
+			"description": "The three states requirement 3.4 names. reconnecting covers both the backoff wait and an attempt in flight: from the producer's side they are the same condition, and distinguishing them would invite a UI that flickers between two labels.",
+			"enum": [
+				"connected",
+				"reconnecting",
+				"disconnected"
+			]
+		},
+		"consecutiveFailedAttempts": {
+			"type": "integer",
+			"description": "Failures since the last successful connection, reset to zero by a success. The UI can use it to stop showing a transient blip as an outage.",
+			"minimum": 0
+		},
+		"reconnectionDelayMilliseconds": {
+			"type": "integer",
+			"description": "The delay currently being waited out, from requirement 3.2's schedule — 500 ms doubling per consecutive failure, capped at 30 seconds. Zero when nothing is scheduled. Milliseconds are named in the field rather than left to a comment, because the C++ member is a std::chrono::milliseconds and a bare number crossing a bridge into TypeScript has no unit at all.",
+			"minimum": 0
+		},
+		"requiredProducerAction": {
+			"type": "string",
+			"description": "Whether the producer has to do something before the extension can reconnect. none means connected, or reconnecting on its own. close_the_other_reaper_instance is requirement 3.5's duplicate-client-type case, which never retries. sign_in_again is requirement 3.6's, where the token could not be renewed. This is the field the UI should branch and translate on.",
+			"enum": [
+				"none",
+				"close_the_other_reaper_instance",
+				"sign_in_again"
+			]
+		},
+		"notice": {
+			"type": "string",
+			"description": "Producer-facing English, authored in C++. The UI should render a translation selected by state and requiredProducerAction and treat this as a fallback — react-i18next covers seven locales and the extension's C++ has no translation catalogue, so a UI that displayed this verbatim would be English-only for exactly the messages a producer reads when something is wrong (Requirement 15.3).",
+			"maxLength": 1024
+		},
+		"lastRejection": {
+			"type": "string",
+			"description": "Why the last handshake was refused, classified. Absent when no handshake has been refused since the last successful connection. For diagnosis rather than display: requiredProducerAction already says what the producer can do about it, and unrecognised means the server's protocol is ahead of this build.",
+			"enum": [
+				"invalid_or_expired_token",
+				"duplicate_client_type",
+				"unsupported_client_type",
+				"authentication_service_unavailable",
+				"network_or_timeout",
+				"unrecognised"
+			]
+		}
+	},
+	"required": [
+		"state",
+		"consecutiveFailedAttempts",
+		"reconnectionDelayMilliseconds",
+		"requiredProducerAction",
+		"notice"
+	],
+	"additionalProperties": false,
+	"$comment": "There is no field here for a token, an expiry, or any part of one, and additionalProperties false is what keeps it that way: requirement 26.1 puts token material in memory only, and the CEF renderer is a separate process running agent-authored markdown. The Catch2 suite already asserts the C++ struct carries none; this is the same assertion one layer out."
+}

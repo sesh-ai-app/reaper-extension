@@ -1,0 +1,117 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/set-parent-send.schema.json",
+	"title": "set_parent_send result",
+	"description": "What set_parent_send returns: the tracks whose parent send was switched, and what each of them now feeds. The target is reported per track rather than once, because the flag's destination is context-dependent — the enclosing folder parent for a track inside a folder, the master for one that is not — so the same call can mean two different things across its own selector list. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"tracks": {
+			"type": "array",
+			"description": "The tracks that were changed, in the order the call supplied them. All of them resolved: an unresolved or ambiguous selector refuses the whole call rather than applying it to part of the list.",
+			"items": {
+				"$ref": "#/definitions/parentSendChange"
+			},
+			"minItems": 1,
+			"maxItems": 512
+		},
+		"enabled": {
+			"type": "boolean",
+			"description": "The state that was applied, echoed because the consequence is asymmetric and the agent has to describe the right one: switching it off removes the track from the summed path without muting it, since explicit sends still carry signal."
+		},
+		"silencedFolderParents": {
+			"type": "array",
+			"description": "Folder parents left with no children feeding them as a result of this call. This is the shape that looks like a summing bus and sums nothing, and it is the condition that makes a render of that folder near-silent — so it is named here rather than discovered at render time. Empty in the ordinary case.",
+			"items": {
+				"$ref": "#/definitions/trackReference"
+			},
+			"maxItems": 512
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"tracks",
+		"enabled",
+		"silencedFolderParents",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"parentSendChange": {
+			"type": "object",
+			"description": "One track's parent send change, naming what the flag routes to for that track.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER.",
+					"maxLength": 512
+				},
+				"previousEnabled": {
+					"type": "boolean",
+					"description": "The flag's state before the call. Equal to the applied state when the track was already in that state, which is a no-op worth not describing as a change."
+				},
+				"target": {
+					"type": "string",
+					"description": "What this track's parent send feeds: its enclosing folder parent, or the master track when it sits at top level.",
+					"enum": [
+						"folder_parent",
+						"master"
+					]
+				},
+				"targetGuid": {
+					"$ref": "#/definitions/guid"
+				}
+			},
+			"required": [
+				"guid",
+				"name",
+				"previousEnabled",
+				"target",
+				"targetGuid"
+			],
+			"additionalProperties": false
+		},
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

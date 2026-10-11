@@ -1,0 +1,217 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/get-routing.schema.json",
+	"title": "get_routing result",
+	"description": "What get_routing returns: how signal actually reaches the master. REAPER sums three separate ways and only one of them appears in send enumeration, so a result carrying sends alone would be wrong rather than incomplete — folder depth and the parent send flag are the other two, and both are here. Each track also carries the raw signals its structural role was derived from, so a role the agent finds surprising is diagnosable from the result rather than from a log the agent cannot see (Requirements 6.6, 18.2). A read tool, so no undo report.",
+	"type": "object",
+	"properties": {
+		"tracks": {
+			"type": "array",
+			"description": "The tracks the call asked about, in REAPER's track order. The whole project when the call supplied no selectors.",
+			"items": {
+				"$ref": "#/definitions/trackRouting"
+			},
+			"maxItems": 4096
+		},
+		"masterTrack": {
+			"$ref": "#/definitions/masterTrackRouting"
+		}
+	},
+	"required": [
+		"tracks"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackRouting": {
+			"type": "object",
+			"description": "One track's routing, and the signals its role was derived from. accumulatedDepth is the running total of folder depth deltas up to and including this track, which is the only expression of parentage REAPER has — it stores no parent pointer.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER.",
+					"maxLength": 512
+				},
+				"role": {
+					"$ref": "#/definitions/structuralRole"
+				},
+				"folderDepth": {
+					"type": "integer",
+					"description": "The raw I_FOLDERDEPTH delta: 1 opens a folder, 0 is a sibling, a negative value closes that many folders after this track.",
+					"minimum": -64,
+					"maximum": 1
+				},
+				"accumulatedDepth": {
+					"type": "integer",
+					"description": "Nesting level, accumulated across track order. Zero is top level. Derived by the extension rather than read, because REAPER does not store it.",
+					"minimum": 0
+				},
+				"folderParentGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"parentSendEnabled": {
+					"type": "boolean",
+					"description": "The B_MAINSEND flag: whether this track's output feeds its parent — the enclosing folder parent when it is in a folder, the master track when it is not. Invisible to send enumeration, which is why a folder parent whose children have it switched off looks like a summing bus and sums nothing."
+				},
+				"sends": {
+					"type": "array",
+					"description": "Explicit sends from this track, indexed as remove_send and set_send_state address them.",
+					"items": {
+						"$ref": "#/definitions/sendDetail"
+					},
+					"maxItems": 256
+				},
+				"receives": {
+					"type": "array",
+					"description": "Explicit receives into this track. Carried separately from sends because send enumeration alone cannot tell a return track from an ordinary one — what makes a track an aux return is that things feed it.",
+					"items": {
+						"$ref": "#/definitions/sendDetail"
+					},
+					"maxItems": 256
+				},
+				"itemCount": {
+					"type": "integer",
+					"description": "Number of media items on the track. One of the role signals: a folder parent holding no items is a summing point rather than a track that happens to have children.",
+					"minimum": 0
+				},
+				"fxCount": {
+					"type": "integer",
+					"description": "Number of FX on the track's chain. A role signal: a receiving track with FX is a shared effect, one without is a plain sum.",
+					"minimum": 0
+				}
+			},
+			"required": [
+				"guid",
+				"name",
+				"role",
+				"folderDepth",
+				"accumulatedDepth",
+				"parentSendEnabled",
+				"sends",
+				"receives",
+				"itemCount",
+				"fxCount"
+			],
+			"additionalProperties": false
+		},
+		"masterTrackRouting": {
+			"type": "object",
+			"description": "The master track's routing. Shaped like a track's but not one: it sits outside the indexed track list, so it has no folder depth and no parent to send to. Present when the call read the whole project, since that is where a stem set is checked against what actually reaches the mix.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Display name of the master track.",
+					"maxLength": 512
+				},
+				"role": {
+					"$ref": "#/definitions/structuralRole"
+				},
+				"receives": {
+					"type": "array",
+					"description": "Explicit receives into the master track. Does not include the tracks that reach it through their parent send, which is how most signal arrives — those are found through parentSendEnabled on the tracks themselves.",
+					"items": {
+						"$ref": "#/definitions/sendDetail"
+					},
+					"maxItems": 256
+				},
+				"fxCount": {
+					"type": "integer",
+					"description": "Number of FX on the master chain. Relevant to a stems render: plain stems are taken before this chain, which is why they sum back to the mix.",
+					"minimum": 0
+				}
+			},
+			"required": [
+				"guid",
+				"name",
+				"role",
+				"receives",
+				"fxCount"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"structuralRole": {
+			"type": "string",
+			"description": "What the track does in the session's signal flow, derived by the extension from folder depth, parent send state, item count, FX presence, and receive count. The same enumeration project-context.schema.json reports.",
+			"enum": [
+				"summing_folder_parent",
+				"silent_folder_parent",
+				"aux_return",
+				"normal",
+				"master"
+			]
+		},
+		"sendDetail": {
+			"type": "object",
+			"description": "One explicit send or receive. The same shape serves both directions: trackGuid and trackName name the far end, so on a track's sends that is the destination and on its receives it is the source.",
+			"properties": {
+				"index": {
+					"type": "integer",
+					"description": "Index of the send on the source track, which is how remove_send and set_send_state address it. A track can hold more than one send to the same destination, so the far end alone does not identify it.",
+					"minimum": 0
+				},
+				"trackGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"trackName": {
+					"type": "string",
+					"description": "Name of the track at the far end, so the routing can be described to the producer without a second read.",
+					"maxLength": 512
+				},
+				"volume": {
+					"$ref": "#/definitions/volumeDecibels"
+				},
+				"pan": {
+					"$ref": "#/definitions/panPercent"
+				},
+				"muted": {
+					"type": "boolean",
+					"description": "Whether the send is muted."
+				},
+				"mode": {
+					"$ref": "#/definitions/sendMode"
+				}
+			},
+			"required": [
+				"index",
+				"trackGuid",
+				"trackName",
+				"volume",
+				"pan",
+				"muted",
+				"mode"
+			],
+			"additionalProperties": false
+		},
+		"volumeDecibels": {
+			"type": "number",
+			"description": "Fader level in decibels, where 0 is unity. Same range the input definitions accept, so a level read back can be written back.",
+			"minimum": -150,
+			"maximum": 12
+		},
+		"panPercent": {
+			"type": "number",
+			"description": "Pan position as a percentage, where -100 is hard left, 0 is centre, and 100 is hard right.",
+			"minimum": -100,
+			"maximum": 100
+		},
+		"sendMode": {
+			"type": "string",
+			"description": "Where in the source track's signal chain the send is taken from.",
+			"enum": [
+				"post_fader",
+				"pre_fx",
+				"post_fx"
+			]
+		}
+	}
+}

@@ -1,0 +1,53 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/set-time-selection.schema.json",
+	"title": "set_time_selection result",
+	"description": "What set_time_selection returns: the span now selected, which is the span a render bounded by time selection will write. The end is always greater than the start — the extension checks that and refuses otherwise, since JSON Schema cannot express it (Requirement 9.6). A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"start": {
+			"$ref": "#/definitions/timelinePosition"
+		},
+		"end": {
+			"type": "number",
+			"description": "End of the selection in seconds. Always greater than start.",
+			"exclusiveMinimum": 0
+		},
+		"lengthSeconds": {
+			"type": "number",
+			"description": "Length of the selection in seconds. Derived, and reported because the duration is what a producer asked for when they framed the request as \"the last thirty seconds\" — and what decides whether a render of this span is short enough to be worth queuing at all.",
+			"exclusiveMinimum": 0
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"start",
+		"end",
+		"lengthSeconds",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

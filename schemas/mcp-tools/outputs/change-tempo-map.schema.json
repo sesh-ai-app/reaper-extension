@@ -1,0 +1,61 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/change-tempo-map.schema.json",
+	"title": "change_tempo_map result",
+	"description": "What change_tempo_map returns: what the map looks like now, not what was asked for. Writing a point at a position that already had one replaces it rather than adding, and merging is not the same operation as replacing, so pointsWritten and pointsReplaced are reported separately and the resulting total is reported outright. Changing the tempo map moves every beat-based item and automation point in the session, so movedItemCount is what tells the producer the scale of what just happened to their arrangement. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"pointsWritten": {
+			"type": "integer",
+			"description": "How many new tempo map points were added.",
+			"minimum": 0
+		},
+		"pointsReplaced": {
+			"type": "integer",
+			"description": "How many existing points were overwritten because a supplied point sat at the same position. Counted separately from pointsWritten so that \"add a tempo change\" and \"change the tempo change that was there\" are distinguishable in the result.",
+			"minimum": 0
+		},
+		"replacedExisting": {
+			"type": "boolean",
+			"description": "True when the whole existing map was cleared before writing. The producer lost every tempo change they had, which is a different conversation from merging points in."
+		},
+		"tempoChangeCount": {
+			"type": "integer",
+			"description": "How many tempo or time signature changes the map holds now, beyond the initial values. The same count the project context snapshot reports, so the agent can see the session it is now working with without a fresh snapshot.",
+			"minimum": 0
+		},
+		"movedItemCount": {
+			"type": "integer",
+			"description": "How many media items shifted on the timeline as a consequence. Beat-based items move with the tempo map and time-based ones do not, so this is the number that says whether the arrangement stayed intact.",
+			"minimum": 0
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"pointsWritten",
+		"pointsReplaced",
+		"replacedExisting",
+		"tempoChangeCount",
+		"movedItemCount",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

@@ -1,0 +1,107 @@
+{
+	"application": {
+		"name": "Sesh AI",
+		"tagline": "REAPER のためのスタジオアシスタント"
+	},
+	"conversation": {
+		"historyLabel": "会話履歴",
+		"emptyHistory": "頼んだことがそのままセッションで実行されます。トラック名、時間範囲、または目指すサウンドを伝えてみてください。",
+		"producerLabel": "あなた",
+		"assistantLabel": "Sesh AI"
+	},
+	"streamingResponse": {
+		"regionLabel": "応答",
+		"awaitingFirstText": "応答を作成しています。"
+	},
+	"responseCompleteness": {
+		"mayBeIncomplete": "この応答の一部が届かなかったため、表示されている内容は不完全な可能性があります。",
+		"missingSequences": "欠落した断片: {{sequences}}"
+	},
+	"toolActivity": {
+		"awaitingResponse": "Sesh AI がリクエストを処理しています。",
+		"streamingResponse": "Sesh AI が応答しています。"
+	},
+	"producerPrompt": {
+		"inputLabel": "Sesh AI に依頼する",
+		"inputPlaceholder": "セッションで何をしたいか入力してください",
+		"send": "送信",
+		"charactersRemaining": "残り {{remaining}} 文字",
+		"refusal": {
+			"promptTextTooLong": "このプロンプトは長すぎて送信できません。短くしてからもう一度お試しください。",
+			"transportUnavailable": "パネルが拡張機能に接続できなかったため、何も送信されていません。プロンプトはそのまま残っています。",
+			"notSent": "プロンプトを送信できませんでした。内容はそのまま残っているので、もう一度お試しください。"
+		}
+	},
+	"connectionStatus": {
+		"connected": "セッションに接続しています。",
+		"reconnecting": "接続が切断されました。再接続しています。",
+		"disconnected": "セッションに接続していません。",
+		"closeTheOtherReaperInstance": "別の REAPER インスタンスがこのセッションを使用しています。そちらを閉じればこのパネルが接続します。自動で再試行を続けることはありません。",
+		"signInAgain": "サインインが無効になりました。再接続するには、もう一度サインインしてください。",
+		"failedAttempts": "前回の接続以降に失敗した試行: {{attempts}}"
+	},
+	"streamError": {
+		"heading": "問題が発生しました",
+		"dismiss": "閉じる",
+		"diagnosticsLabel": "技術的な詳細",
+		"code": "コード: {{code}}",
+		"whileHandling": "処理中の対象: {{envelopeType}}",
+		"byCode": {
+			"stage_creation_failed": "オーディオストリーミングを設定できなかったため、リモートでモニタリングできるものはまだありません。セッションは変更されていません。",
+			"participant_token_issuance_failed": "オーディオストリーミングを承認できなかったため、リモートでモニタリングできるものはまだありません。セッションは変更されていません。"
+		}
+	},
+	"confirmation": {
+		"heading": "このアクションを承認しますか？",
+		"risk": "リスク: {{level}}",
+		"riskLevel": {
+			"low": "低",
+			"medium": "中",
+			"high": "高"
+		},
+		"riskNotReported": "Sesh AI はこの操作のリスクを報告しませんでした。上に表示されているリスクは、このアクションを評価した結果ではなく、拡張機能が安全側に立てた想定です。",
+		"detailsLabel": "影響する範囲",
+		"detailsUnavailable": "このリクエストには、これ以上の詳細が届きませんでした。",
+		"descriptionIncomplete": "このリクエストの一部が届かなかったため、上の説明はこのアクションが行うすべてを網羅していない可能性があります。",
+		"timeRemaining": "回答の残り時間: {{remaining}}",
+		"timeElapsed": "回答の時間が終了しました。結果を待っています。",
+		"windowExplanation": "時間内に回答がない場合、このアクションは取り消され、セッションには何も変更が加えられません。",
+		"approve": "承認",
+		"reject": "拒否",
+		"answerSubmitted": "回答を送信しました。確認を待っています。",
+		"answerNotSent": "回答がパネルから送信されなかったため、まだ何も回答されていません。もう一度お試しください。",
+		"resolution": {
+			"approved": "そのアクションは承認されました。",
+			"rejected": "そのアクションは拒否されました。",
+			"expired": "回答の時間が終了したため、そのアクションは取り消されました。",
+			"unknown": "そのリクエストは、もう回答を待っていません。",
+			"nothingWasChanged": "セッションには何も変更が加えられていません。",
+			"answeredHere": "ここで回答しました。",
+			"answeredOnThePhone": "スマートフォンで回答されました。",
+			"answeredElsewhere": "別のデバイスで回答されました。",
+			"approvalDidNotTakeEffect": "承認しましたが、すでに別の結果で確定していたため、この承認は反映されませんでした。",
+			"rejectionDidNotTakeEffect": "拒否しましたが、すでに別の結果で確定していたため、この拒否は反映されませんでした。",
+			"verdictDidNotTakeEffect": "回答が間に合わなかったため、反映されませんでした。",
+			"dismiss": "閉じる"
+		}
+	},
+	"scriptDownload": {
+		"regionLabel": "生成された ReaScript",
+		"explanation": "Sesh AI は、あなた自身が読んで実行するためにこのスクリプトを書きました。拡張機能がこれを実行することはありません。",
+		"download": "ダウンロード",
+		"downloadNamed": "{{fileName}} をダウンロード",
+		"size": "サイズ: {{size}}",
+		"expiresAt": "このダウンロードリンクは {{time}} まで有効です。",
+		"expired": "このダウンロードリンクは期限切れです。新しいリンクを受け取るには、Sesh AI にスクリプトをもう一度依頼してください。"
+	},
+	"streamIngest": {
+		"regionLabel": "オーディオストリーミングの設定値",
+		"explanation": "これらの値を ReaCast に貼り付けると、セッションのオーディオを送出できます。",
+		"ingestUrlLabel": "送信先 URL",
+		"streamKeyLabel": "ストリームキー",
+		"participantLabel": "参加者",
+		"expiresAt": "これらの値は {{time}} まで有効です。",
+		"expired": "これらのストリーミング設定値は期限切れです。Sesh AI にストリーミングの再設定を依頼してください。",
+		"reissued": "これらの値は更新されました。ここに表示されているストリームキーを使用してください。"
+	}
+}

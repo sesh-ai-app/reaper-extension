@@ -1,0 +1,117 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/create-track.schema.json",
+	"title": "create_track result",
+	"description": "What create_track returns: the new track's GUID and where it landed, plus any folder depth deltas the insert forced the extension to repair. The repairs are the reason this tool is destructive despite only adding something — REAPER encodes folder nesting as a delta per track with no parent pointer, so inserting inside a folder changes what the tracks around it are parented to. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"track": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"index": {
+			"type": "integer",
+			"description": "Zero-based position the new track took in the project's track order. What to tell a producer looking at REAPER's track numbers, not a way to address the track — use the GUID for that.",
+			"minimum": 0
+		},
+		"accumulatedDepth": {
+			"type": "integer",
+			"description": "Nesting level the new track ended up at. Zero is top level. Worth reporting because a track inserted inside a folder is summed by that folder's parent, which changes what the producer hears.",
+			"minimum": 0
+		},
+		"folderDepthRepairs": {
+			"$ref": "#/definitions/folderDepthRepairs"
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"track",
+		"index",
+		"accumulatedDepth",
+		"folderDepthRepairs",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"folderDepthRepairs": {
+			"type": "array",
+			"description": "Every track whose folder depth delta was repaired as a consequence of this call. Empty when the structure needed no repair, and required rather than optional on the tools that can disturb structure: an absent array and an empty one would otherwise be indistinguishable from \"the extension did not check\".",
+			"items": {
+				"$ref": "#/definitions/folderDepthRepair"
+			},
+			"maxItems": 4096
+		},
+		"folderDepthRepair": {
+			"type": "object",
+			"description": "One track whose folder depth delta the Folder Invariant Keeper changed to keep the structure valid, other than because the call asked for it. REAPER encodes nesting as a delta per track with no parent pointer, so inserting, deleting, or reordering a track can invalidate the structure of tracks the operation never named (Requirement 11.1). Reported so that a structural side effect is something the agent can tell the producer about rather than something they discover later.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER.",
+					"maxLength": 512
+				},
+				"previousFolderDepth": {
+					"type": "integer",
+					"description": "The track's I_FOLDERDEPTH delta before the repair.",
+					"minimum": -64,
+					"maximum": 1
+				},
+				"folderDepth": {
+					"type": "integer",
+					"description": "The track's I_FOLDERDEPTH delta after the repair.",
+					"minimum": -64,
+					"maximum": 1
+				}
+			},
+			"required": [
+				"guid",
+				"name",
+				"previousFolderDepth",
+				"folderDepth"
+			],
+			"additionalProperties": false
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

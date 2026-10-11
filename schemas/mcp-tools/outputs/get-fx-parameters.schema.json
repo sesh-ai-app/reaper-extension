@@ -1,0 +1,123 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/get-fx-parameters.schema.json",
+	"title": "get_fx_parameters result",
+	"description": "What get_fx_parameters returns: one FX's parameters, each with its current value and the range it accepts. This is the read set_fx_parameter depends on — parameter names and ranges differ between plugins, so a name like \"Threshold\" and a range of 0 to 1 are assumptions until they appear here. The FX name is echoed alongside the index so the agent can confirm it read the plugin it meant to, rather than a chain position that shifted since the last read. A read tool, so no undo report.",
+	"type": "object",
+	"properties": {
+		"track": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"fxIndex": {
+			"type": "integer",
+			"description": "Zero-based chain position of the FX that was read.",
+			"minimum": 0
+		},
+		"fxName": {
+			"type": "string",
+			"description": "Name of the FX at that chain position, as REAPER reports it.",
+			"minLength": 1,
+			"maxLength": 512
+		},
+		"parameters": {
+			"type": "array",
+			"description": "The FX's parameters in the plugin's own order. Empty for a plugin that exposes none, which some analysers do.",
+			"items": {
+				"$ref": "#/definitions/fxParameter"
+			},
+			"maxItems": 1024
+		},
+		"totalInRange": {
+			"$ref": "#/definitions/totalInRange"
+		},
+		"truncated": {
+			"$ref": "#/definitions/truncated"
+		}
+	},
+	"required": [
+		"track",
+		"fxIndex",
+		"fxName",
+		"parameters",
+		"totalInRange",
+		"truncated"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"fxParameter": {
+			"type": "object",
+			"description": "One parameter of an FX, with the range it accepts. The range travels with the value because it differs between plugins — a threshold running -60 to 0 in one compressor runs 0 to 1 in another, and set_fx_parameter is only safe to call against the range reported here.",
+			"properties": {
+				"index": {
+					"type": "integer",
+					"description": "Zero-based parameter index on the FX.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Parameter name exactly as REAPER reports it. set_fx_parameter matches on this string, so it is passed back unaltered rather than tidied up.",
+					"minLength": 1,
+					"maxLength": 512
+				},
+				"value": {
+					"type": "number",
+					"description": "Current value, in the parameter's own units."
+				},
+				"minimumValue": {
+					"type": "number",
+					"description": "Lowest value the parameter accepts."
+				},
+				"maximumValue": {
+					"type": "number",
+					"description": "Highest value the parameter accepts."
+				},
+				"formattedValue": {
+					"type": "string",
+					"description": "The value as the plugin's own UI displays it — \"-6.0 dB\", \"120 Hz\". Present when the plugin supplies a formatted value, and the string to quote to the producer, since the raw number is often normalised and means nothing to them.",
+					"maxLength": 256
+				}
+			},
+			"required": [
+				"index",
+				"name",
+				"value",
+				"minimumValue",
+				"maximumValue"
+			],
+			"additionalProperties": false
+		},
+		"totalInRange": {
+			"type": "integer",
+			"description": "How many entries matched the call's filters before maximumResults capped the returned list. Equal to the length of the returned array when nothing was capped. Carried so that a capped read is visible to the agent rather than a silent truncation it reasons over as if it were the whole set (Requirement 23.9).",
+			"minimum": 0
+		},
+		"truncated": {
+			"type": "boolean",
+			"description": "True when totalInRange exceeds the number of entries returned. Stated rather than left to be inferred from comparing two numbers, so the agent has to notice it before telling the producer the list is complete."
+		}
+	}
+}

@@ -1,0 +1,130 @@
+# Dependabot version updates (requirement 21.7).
+#
+# ---------------------------------------------------------------------------
+# What these three entries actually cover, and what they do not
+#
+# Worth stating plainly, because "Dependabot is enabled" reads as "the
+# dependencies are watched" and here that is only partly true. The C++
+# dependencies arrive three different ways (DEPENDENCIES.md), and Dependabot can
+# see one of them.
+#
+# Covered:
+#
+#   - `github-actions` — every `uses:` in `.github/workflows/`. Dependabot
+#     rewrites both the pinned SHA and the trailing version comment, which is
+#     what makes commit-hash pinning maintainable rather than a thing that rots.
+#   - `npm` — `ui/package.json` and `ui/package-lock.json`. The whole of the
+#     React/TypeScript surface.
+#   - `vcpkg` — `vcpkg.json`, with the caveat below, which is a large one.
+#
+# NOT covered, by anything, and not fixable here:
+#
+#   - **socket.io-client-cpp.** Acquired by CMake `FetchContent` at commit
+#     3b7be7e, deliberately past its newest tag because 3.1.0's
+#     `sio::client::connect` has no auth-message overload and the server reads
+#     `socket.handshake.auth` with no fallback (ADR 0021 in the monorepo).
+#     Dependabot has no CMake or `FetchContent` ecosystem at all —
+#     dependabot/dependabot-core#7451 is open — so this pin is invisible to it.
+#     That is fortunate here rather than merely tolerable: an automated bump
+#     would move the pin to a tag that cannot satisfy requirement 3.1.
+#   - **The CEF binary distribution** (pinned version plus six published SHA1
+#     digests in `CMakeLists.txt`) and **the REAPER SDK** (two pinned commits in
+#     `CMakeLists.txt`). Same reason — neither is a package in any registry
+#     Dependabot speaks to.
+#
+# Watching those three is a scheduled job that compares each pin against
+# upstream and opens an issue when it moves. DEPENDENCIES.md puts that with the
+# CI workflow rather than here, and it is not built yet.
+#
+# ---------------------------------------------------------------------------
+# The vcpkg caveat
+#
+# Dependabot's vcpkg support updates the `builtin-baseline` commit hash in
+# `vcpkg.json` and nothing else. It does not touch `dependencies` or
+# `overrides` — Microsoft's own documentation presents `overrides` as the way to
+# hold a port back *while* the baseline moves forward.
+#
+# `vcpkg.json` overrides all three of its ports to exact versions, as the
+# dependency-management steering requires of anything affecting build output. So
+# a Dependabot baseline bump here changes the registry commit and changes no
+# library version: nlohmann-json stays at 3.12.0#2, json-schema-validator at
+# 2.4.0, catch2 at 3.16.0.
+#
+# The entry is kept anyway, and the reason is worth being clear about. The pull
+# request is not the upgrade; it is the notification that the registry moved,
+# and the place to do the upgrade — bump the baseline and the matching
+# `overrides` entry in the same reviewed change. Treating it as "merge and
+# done" would be reading it wrong.
+#
+# ---------------------------------------------------------------------------
+# No `labels` key, deliberately
+#
+# Dependabot's documented behaviour is that a label named in `labels` which does
+# not already exist in the repository is silently ignored — so a hand-written
+# list is config that looks like it does something until someone checks the pull
+# requests. The default behaviour needs nothing: Dependabot creates
+# `dependencies` itself, and adds a per-ecosystem label when more than one
+# ecosystem is configured, which is the case here.
+
+version: 2
+
+updates:
+  # ---------------------------------------------------------------------------
+  # GitHub Actions. `directory: "/"` is the documented value for this ecosystem;
+  # Dependabot searches `.github/workflows/` from there.
+  #
+  # Grouped into one pull request because these move together, are reviewed the
+  # same way, and the alternative is a steady trickle of single-SHA changes.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: chore
+
+  # ---------------------------------------------------------------------------
+  # The UI. `ui/` is the only npm manifest in this repository.
+  #
+  # Majors are left on their own — a React or Vite major is a change to review,
+  # not one to batch — while minors and patches arrive together.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: npm
+    directory: "/ui"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    versioning-strategy: increase
+    groups:
+      ui-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore
+      include: scope
+
+  # ---------------------------------------------------------------------------
+  # vcpkg. Read the caveat in the file comment before merging one of these: the
+  # pull request moves `builtin-baseline` and leaves `overrides` alone, so on its
+  # own it upgrades nothing.
+  #
+  # Monthly rather than weekly. The vcpkg registry moves constantly and a
+  # baseline bump that changes no pinned version is not weekly-grade news.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: vcpkg
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: chore

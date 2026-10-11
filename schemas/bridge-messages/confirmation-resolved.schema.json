@@ -1,0 +1,63 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/bridge-messages/confirmation-resolved.schema.json",
+	"title": "Confirmation Resolution View",
+	"description": "Payload of the view:confirmation_resolved bridge message — the Confirmation Coordinator's ConfirmationResolutionView, serialized across the CEF bridge so the UI can take the prompt down and say how it ended (Requirements 13.5, 23.7). Keyed by requestId rather than meaning \"the current prompt\": another confirmation may be showing and still be answerable. Four of the seven fields are the coordinator's own conclusions, reached by comparing the server's broadcast against what this client sent, and nothing in confirm-resolved.schema.json carries them — the server does not know what the extension did locally.",
+	"type": "object",
+	"properties": {
+		"requestId": {
+			"type": "string",
+			"description": "Correlation identifier of the confirmation that stopped being pending. The prompt the UI dismisses is the one holding this identifier.",
+			"minLength": 1,
+			"maxLength": 128
+		},
+		"resolution": {
+			"type": "string",
+			"description": "How the confirmation ended. Absent when the server's resolution string was not one of the three this build knows — the prompt still comes down, because it is demonstrably no longer pending, but naming an outcome would be inventing one.",
+			"enum": [
+				"approved",
+				"rejected",
+				"expired"
+			]
+		},
+		"answeringClient": {
+			"type": "string",
+			"description": "Which client answered, when the server said. Absent for an expiry, where nothing answered, and absent on protocol drift where an approved or rejected resolution arrived without it.",
+			"enum": [
+				"extension",
+				"pwa"
+			]
+		},
+		"answeredByThisClient": {
+			"type": "boolean",
+			"description": "True when this extension sent the answer, so the UI can say \"you approved this\" rather than \"approved on your phone\". Derived from the coordinator's own pending-decision record, which is the only place that knowledge exists.",
+			"default": false
+		},
+		"localVerdict": {
+			"type": "string",
+			"description": "What this extension sent, when it sent anything. Present for a resolution this client answered, whether or not the server agreed. Only the two answers a producer can give are representable — an expiry is the server's conclusion and never a local verdict.",
+			"enum": [
+				"approved",
+				"rejected"
+			]
+		},
+		"contradictsLocalVerdict": {
+			"type": "boolean",
+			"description": "True when this extension sent a verdict and the server concluded something else — the producer tapping Approve as the window closed is the case that produces it. The outcome the producer needs to hear is the server's, and they need to hear that theirs did not take effect.",
+			"default": false
+		},
+		"nothingWasChanged": {
+			"type": "boolean",
+			"description": "True only when the resolution establishes that the session was not touched: rejected, or expired (Requirement 23.7). False covers both \"approved\" and \"this build could not read the resolution\", so it is a licence to tell the producer nothing changed, not a claim that something did.",
+			"default": false
+		}
+	},
+	"required": [
+		"requestId",
+		"answeredByThisClient",
+		"contradictsLocalVerdict",
+		"nothingWasChanged"
+	],
+	"additionalProperties": false,
+	"$comment": "resolution, answeringClient, and localVerdict are the three std::optional members of ConfirmationResolutionView and are the only fields here whose absence is meaningful. nothingWasChanged is deliberately not expressed as a schema condition over resolution: it is false for an unreadable resolution as well as for an approval, so a conditional would have to encode \"false means either\" and would then read as a rule the UI could invert."
+}

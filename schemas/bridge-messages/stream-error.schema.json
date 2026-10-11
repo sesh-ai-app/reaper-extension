@@ -1,0 +1,37 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/bridge-messages/stream-error.schema.json",
+	"title": "Stream Error View",
+	"description": "Payload of the view:stream_error bridge message — the Stream Presenter's StreamErrorView, serialized across the CEF bridge so the UI can show the producer what went wrong (Requirement 23.2). Covers stream:error and all seven error:* envelope types, which requirement 5.5 routes to the same place. The error:* types have no bundled payload schema at all, which is why this document matters more than it looks: it is the only schema describing what the UI receives for them, and without it the TypeScript side would be typed from whatever the C++ happened to send.",
+	"type": "object",
+	"properties": {
+		"code": {
+			"type": "string",
+			"description": "Machine-readable error code, as the server sent it. Stable enough for the UI to branch on and to key a translation off, which is what it should do rather than translating the message below.",
+			"maxLength": 128
+		},
+		"message": {
+			"type": "string",
+			"description": "Producer-safe explanation, as the server sent it. stream-error.schema.json documents it as safe to display. English, from the server, so the UI prefers a translation keyed on code and falls back to this.",
+			"maxLength": 2048
+		},
+		"envelopeType": {
+			"type": "string",
+			"description": "The envelope type that triggered the error, when the error answers one. Empty when it does not — an error:* type reporting a condition rather than refusing a message.",
+			"maxLength": 128
+		},
+		"validationErrors": {
+			"type": "string",
+			"description": "Rendered schema validation failures, when that was the cause (Requirement 4.1). Already a single formatted string rather than a structured list: the extension's validator produces prose, and the UI shows it for diagnosis rather than branching on it. Empty when the error was not a validation failure.",
+			"maxLength": 8192
+		}
+	},
+	"required": [
+		"code",
+		"message",
+		"envelopeType",
+		"validationErrors"
+	],
+	"additionalProperties": false,
+	"$comment": "Only the last stream error is carried, not a list — the presenter holds one. A second error replaces the first, which is the right shape for a banner and the wrong one for a history; nothing in requirements 16 or 23 asks for a history."
+}

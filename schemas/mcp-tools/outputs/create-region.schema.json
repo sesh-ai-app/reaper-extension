@@ -1,0 +1,89 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/create-region.schema.json",
+	"title": "create_region result",
+	"description": "What create_region returns: the new region, with the GUID that addresses it and the index REAPER assigned. The start and end come back because the region is now what turns a request framed by section into a time span — its GUID bounds a render, and its start and end go into set_time_selection. The end is always greater than the start, since the extension refuses to write a region that is not (Requirement 9.6). A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"region": {
+			"$ref": "#/definitions/regionDetail"
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"region",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"regionDetail": {
+			"type": "object",
+			"description": "A project region. Its start and end are what turn a request framed by section — \"render the chorus\" — into a time span, so both are always reported.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"index": {
+					"type": "integer",
+					"description": "Region index as assigned by REAPER.",
+					"minimum": 0
+				},
+				"start": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"end": {
+					"type": "number",
+					"description": "Region end position in seconds. Always greater than start — the extension refuses to write a region that is not (Requirement 9.6).",
+					"exclusiveMinimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Region name.",
+					"maxLength": 512
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"guid",
+				"index",
+				"start",
+				"end",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"color": {
+			"type": "string",
+			"description": "Colour as a six-digit hexadecimal RGB string prefixed with #.",
+			"pattern": "^#[0-9A-Fa-f]{6}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

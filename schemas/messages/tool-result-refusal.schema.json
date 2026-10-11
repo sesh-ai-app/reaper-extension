@@ -1,0 +1,79 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/tool-result-refusal.schema.json",
+	"title": "Tool Precondition Refusal",
+	"description": "Payload the REAPER extension returns inside a response:* envelope when it declines to run a constrained tool because a runtime precondition failed — foreign entries in the turn's undo range, a render output collision, an unresolvable or ambiguous track selector, or a send that would create a signal cycle. A refusal is not a failure and not a success: the operation was understood and deliberately not performed, so the MCP Tool Server maps it to a CallToolResult with isError true and the precondition_unmet code, which stops the harness treating it as a completed change. The agent resolves what is listed in blocking with the producer and calls the tool again, setting the input field named by acknowledgementField. Because the refusal replaces the tool result rather than accompanying it, no additional properties are allowed — that keeps it unambiguously distinguishable from a normal result payload.",
+	"type": "object",
+	"properties": {
+		"refused": {
+			"type": "boolean",
+			"description": "Always true. This is the discriminator that marks the payload a refusal rather than a tool result, so it is a constant rather than a flag to be read.",
+			"const": true
+		},
+		"reason": {
+			"type": "string",
+			"description": "Machine-readable cause, so the agent can choose between asking the producer to approve a consequence and asking them to disambiguate a reference.",
+			"enum": [
+				"foreign_undo_entries",
+				"output_file_collision",
+				"ambiguous_track_selector",
+				"unresolved_track_selector",
+				"signal_cycle"
+			]
+		},
+		"blocking": {
+			"type": "array",
+			"description": "The specific entities standing in the way, so the producer is shown what is actually blocking the call rather than a generic warning. Empty only when the reason itself is fully self-describing.",
+			"items": {
+				"$ref": "#/definitions/blockingEntity"
+			},
+			"maxItems": 512
+		},
+		"acknowledgementField": {
+			"type": "string",
+			"description": "Name of the input property the agent must set on the retry to acknowledge the precondition and proceed. Named here rather than left to the model to recall from the tool description, which removes a guess from the escalation loop.",
+			"minLength": 1,
+			"maxLength": 128
+		}
+	},
+	"required": [
+		"refused",
+		"reason",
+		"blocking"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"blockingEntity": {
+			"type": "object",
+			"description": "One entity blocking the call.",
+			"properties": {
+				"kind": {
+					"type": "string",
+					"description": "What sort of thing this is, which tells the agent how to talk about it.",
+					"enum": [
+						"undo_entry",
+						"file_path",
+						"track",
+						"send"
+					]
+				},
+				"description": {
+					"type": "string",
+					"description": "Human-readable identification of the entity, in REAPER's own words where REAPER supplies them — an undo entry carries the description REAPER recorded for it, a file path carries the resolved path.",
+					"minLength": 1,
+					"maxLength": 1024
+				},
+				"guid": {
+					"type": "string",
+					"description": "Stable REAPER GUID, when the entity is one the agent can address. Present for track and send entities so an ambiguous selector can be resolved by picking a candidate, rather than the agent having to guess a name pattern that matches exactly one track.",
+					"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+				}
+			},
+			"required": [
+				"kind",
+				"description"
+			],
+			"additionalProperties": false
+		}
+	}
+}

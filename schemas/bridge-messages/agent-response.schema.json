@@ -1,0 +1,95 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/bridge-messages/agent-response.schema.json",
+	"title": "Agent Response View",
+	"description": "Payload of the view:agent_response bridge message — the Stream Presenter's ResponseView, serialized across the CEF bridge so the UI can draw the assistant's response as it arrives (Requirement 16.1). One message carries the whole current response rather than one per delta: the presenter already holds the assembled text, placed sequence by sequence, so publishing the view is cheaper and less error-prone than having the UI reassemble a stream it would then have to reconcile against the server's own assembled version at stop. The gap detection requirement 16.1 asks for lives here as two fields the presenter derived — missingSequences and textMayBeIncomplete — and neither is in agent-response-delta.schema.json, because a gap is not a property of any one delta.",
+	"type": "object",
+	"properties": {
+		"active": {
+			"type": "boolean",
+			"description": "False before anything has been streamed, and after a reset. The UI draws nothing rather than an empty assistant message.",
+			"default": false
+		},
+		"conversationId": {
+			"type": "string",
+			"description": "ULID of the conversation this response belongs to. Empty while inactive.",
+			"maxLength": 64
+		},
+		"turnId": {
+			"type": "string",
+			"description": "Identifier of the agent turn. Empty while inactive.",
+			"maxLength": 64
+		},
+		"messageId": {
+			"type": "string",
+			"description": "Identifier of the assistant message being streamed. Empty while inactive.",
+			"maxLength": 64
+		},
+		"state": {
+			"type": "string",
+			"description": "Where the response is. idle before anything streamed; streaming once a start, or a delta standing in for a missed one, has opened it; ended once a stop arrived.",
+			"enum": [
+				"idle",
+				"streaming",
+				"ended"
+			]
+		},
+		"text": {
+			"type": "string",
+			"description": "What to render. While streaming, the fragments in sequence order; once stopped, the server's assembled text. The UI renders this as markdown and does not append to it — the next publish carries the full text again."
+		},
+		"openedImplicitly": {
+			"type": "boolean",
+			"description": "True when no start envelope was seen for this turn and a delta opened the response instead. A diagnostic rather than something to show the producer: the response is drawn either way.",
+			"default": false
+		},
+		"appliedDeltaCount": {
+			"type": "integer",
+			"description": "How many deltas have been placed into the text, including late ones that filled a gap. Not the same as the highest sequence seen, which is the point of having both.",
+			"minimum": 0
+		},
+		"highestSequenceSeen": {
+			"type": "integer",
+			"description": "The largest sequence number any delta carried. Absent until the first delta arrives.",
+			"minimum": 0
+		},
+		"missingSequences": {
+			"type": "array",
+			"description": "Sequence numbers below the highest seen that never arrived, ascending. Empty when nothing is outstanding. The UI may say so; it does not have to.",
+			"items": {
+				"type": "integer",
+				"minimum": 0
+			}
+		},
+		"textMayBeIncomplete": {
+			"type": "boolean",
+			"description": "True while sequence numbers are outstanding — requirement 16.1's gap detection, in the one field a caller needs to read. Equivalent to missingSequences being non-empty, and carried separately so a UI that only wants the warning does not have to reason about the list.",
+			"default": false
+		},
+		"stopReason": {
+			"type": "string",
+			"description": "From the stop payload. Absent while streaming, and absent after a stop whose own stopReason was null — the server distinguishes those two, and collapsing them would have the UI report a reason for a response still in flight.",
+			"maxLength": 64
+		},
+		"reconciledWithAssembledText": {
+			"type": "boolean",
+			"description": "True when the stop's assembled text replaced the locally accumulated fragments. False after a stop means the two agreed, or that no stop has arrived.",
+			"default": false
+		}
+	},
+	"required": [
+		"active",
+		"conversationId",
+		"turnId",
+		"messageId",
+		"state",
+		"text",
+		"openedImplicitly",
+		"appliedDeltaCount",
+		"missingSequences",
+		"textMayBeIncomplete",
+		"reconciledWithAssembledText"
+	],
+	"additionalProperties": false,
+	"$comment": "No maxLength on text. The protocol's own agent-response-stop.schema.json bounds the assembled text and the codec has already refused anything over that bound before the presenter sees it, so a limit here would either duplicate that number — a second place to change it — or disagree with it and refuse a response the server considered valid."
+}

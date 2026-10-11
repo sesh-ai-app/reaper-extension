@@ -1,0 +1,28 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/confirm-decision.schema.json",
+	"title": "Confirmation Decision",
+	"description": "Payload of a confirm:approve or confirm:reject envelope — the producer's answer to a confirm:request for a destructive operation (Requirements 22.2, 22.3). One schema serves both envelope types because the shape is identical and the envelope type already carries the verdict; the decision property states it a second time so the payload is self-describing when it is logged, persisted, or read apart from its envelope. A client that disagreed with itself — confirm:approve carrying decision rejected — is rejected here rather than resolved by precedence, since neither reading is safe to guess at for an operation the producer was asked about. Only the two answers a producer can give are representable: an expiry is the server's own conclusion, broadcast as confirm:resolved, and never sent by a client.",
+	"type": "object",
+	"properties": {
+		"requestId": {
+			"type": "string",
+			"description": "The requestId the confirm:request envelope carried, echoed back so the AgentCore Client settles the confirmation this answers. The envelope carries it too and that is the copy the server correlates on; it is repeated here so the payload identifies its own subject.",
+			"minLength": 1,
+			"maxLength": 128
+		},
+		"decision": {
+			"type": "string",
+			"description": "The producer's verdict. Must agree with the envelope type — approved for confirm:approve, rejected for confirm:reject.",
+			"enum": [
+				"approved",
+				"rejected"
+			]
+		}
+	},
+	"required": [
+		"requestId",
+		"decision"
+	],
+	"additionalProperties": false
+}

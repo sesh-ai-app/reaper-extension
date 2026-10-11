@@ -1,0 +1,76 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/remove-send.schema.json",
+	"title": "remove_send result",
+	"description": "What remove_send returns: which send went, from where to where. The destination is read before the removal because it cannot be read after, and it is what makes the result sayable to the producer — \"removed the guitars' send to the plate reverb\" rather than \"removed send 2\". Removing a send changes what they hear. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"sourceTrack": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"destinationTrack": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"sendIndex": {
+			"type": "integer",
+			"description": "Index the removed send held on the source track. REAPER renumbers the sends after it, so any index the agent holds from an earlier get_routing is now stale — read again before addressing another send on this track.",
+			"minimum": 0
+		},
+		"remainingSendCount": {
+			"type": "integer",
+			"description": "How many explicit sends the source track has left. Zero on a track whose only path to a shared effect was this send, which is worth saying.",
+			"minimum": 0
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"sourceTrack",
+		"destinationTrack",
+		"sendIndex",
+		"remainingSendCount",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

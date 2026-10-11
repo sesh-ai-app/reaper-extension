@@ -1,0 +1,120 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/import-audio-file.schema.json",
+	"title": "import_audio_file result",
+	"description": "What import_audio_file returns: the new media item, with the GUID every item tool needs to address it and the length REAPER read from the file. The length is the point — the call supplies a position but not a duration, so until the file is opened nobody knows where the item ends, and that is what decides whether it fits the span the producer had in mind. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"track": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"item": {
+			"$ref": "#/definitions/itemPlacement"
+		},
+		"filePath": {
+			"type": "string",
+			"description": "Absolute path of the file that was imported, as REAPER resolved it. Returned because REAPER may store the media relative to the project, and the resolved path is what the producer would find on disk.",
+			"minLength": 1,
+			"maxLength": 4096
+		},
+		"sampleRate": {
+			"type": "integer",
+			"description": "Sample rate of the imported audio in Hz. Worth reporting when it differs from the project's: REAPER resamples on playback, and a producer hearing something subtly wrong is better told than left to find it.",
+			"minimum": 8000,
+			"maximum": 768000
+		},
+		"channelCount": {
+			"type": "integer",
+			"description": "Number of channels in the imported audio. A mono file landing where the producer expected stereo explains an unexpectedly centred sound.",
+			"minimum": 1,
+			"maximum": 64
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"track",
+		"item",
+		"filePath",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"itemPlacement": {
+			"type": "object",
+			"description": "Where a media item sits after the call, carrying the track it is on as well as its bounds. The track GUID is included because an item can be moved between tracks, so \"where is it now\" is two questions.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"trackGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"position": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"length": {
+					"type": "number",
+					"description": "Item length in seconds.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Name of the item's active take, which is what REAPER shows on the item.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"trackGuid",
+				"position",
+				"length"
+			],
+			"additionalProperties": false
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

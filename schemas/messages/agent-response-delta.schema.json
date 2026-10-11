@@ -1,0 +1,45 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/agent-response-delta.schema.json",
+	"title": "Agent Response Delta",
+	"description": "Payload of the stream:agent_response_delta envelope. Carries one text token (or run of text) from a contentBlockDelta event on the AgentCore harness stream, relayed to every connected client in real time.",
+	"type": "object",
+	"properties": {
+		"conversationId": {
+			"type": "string",
+			"description": "ULID of the conversation the response belongs to.",
+			"minLength": 1,
+			"maxLength": 64
+		},
+		"turnId": {
+			"type": "string",
+			"description": "ULID of the agent turn this token belongs to.",
+			"minLength": 1,
+			"maxLength": 64
+		},
+		"messageId": {
+			"type": "string",
+			"description": "ULID the assembled assistant message will be persisted under.",
+			"minLength": 1,
+			"maxLength": 64
+		},
+		"sequence": {
+			"type": "integer",
+			"description": "Zero-based index of this delta within the turn. Lets a client detect a gap or an out-of-order delivery.",
+			"minimum": 0
+		},
+		"text": {
+			"type": "string",
+			"description": "Text fragment to append to the assistant message being displayed.",
+			"minLength": 1
+		}
+	},
+	"required": [
+		"conversationId",
+		"turnId",
+		"messageId",
+		"sequence",
+		"text"
+	],
+	"additionalProperties": false
+}

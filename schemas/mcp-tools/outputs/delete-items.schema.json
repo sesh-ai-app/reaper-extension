@@ -1,0 +1,80 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/delete-items.schema.json",
+	"title": "delete_items result",
+	"description": "What delete_items returns: how many items went and which tracks they were on, because that is what the producer can recognise — they cannot see a GUID, and \"three items removed from Scratch Vocal\" is the only form of this result they can check. The affected tracks are named rather than counted for the same reason. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"deletedItemGuids": {
+			"type": "array",
+			"description": "The items that were deleted. Returned so the agent can tell which of the GUIDs it asked about actually went, rather than assuming the whole list did.",
+			"items": {
+				"$ref": "#/definitions/guid"
+			},
+			"maxItems": 4096
+		},
+		"affectedTracks": {
+			"type": "array",
+			"description": "The tracks the deleted items sat on, in track order. Read before the deletion, because an item's track cannot be read once the item is gone.",
+			"items": {
+				"$ref": "#/definitions/trackReference"
+			},
+			"maxItems": 4096
+		},
+		"deletedLengthSeconds": {
+			"type": "number",
+			"description": "Total length of the deleted items in seconds. The figure that distinguishes trimming a stray click from removing a whole verse, which is worth saying before the producer notices the gap.",
+			"minimum": 0
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"deletedItemGuids",
+		"affectedTracks",
+		"deletedLengthSeconds",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

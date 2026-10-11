@@ -1,0 +1,117 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/move-items.schema.json",
+	"title": "move_items result",
+	"description": "What move_items returns: where each item actually ended up, not the offset that was requested. Items are never moved before zero, so a negative offset applied to an item near the start of the timeline is clamped — and a clamped move breaks the relative spacing of a group, which is the case the agent has to notice and tell the producer about rather than reporting a clean shift. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json.",
+	"type": "object",
+	"properties": {
+		"items": {
+			"type": "array",
+			"description": "The items after the move, each with the track it is now on and where it sits. Carries the track because an item can be moved between tracks, so \"where is it\" is two questions.",
+			"items": {
+				"$ref": "#/definitions/itemPlacement"
+			},
+			"minItems": 1,
+			"maxItems": 4096
+		},
+		"appliedOffsetSeconds": {
+			"type": "number",
+			"description": "The offset that was applied along the timeline. Zero when the call only moved items to another track."
+		},
+		"clampedItemCount": {
+			"type": "integer",
+			"description": "How many items were held at position zero instead of moving the full offset. Non-zero means the items no longer sit at their original spacing relative to each other, which is a musical consequence and not a rounding detail.",
+			"minimum": 0
+		},
+		"toTrack": {
+			"$ref": "#/definitions/trackReference"
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"items",
+		"appliedOffsetSeconds",
+		"clampedItemCount",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"itemPlacement": {
+			"type": "object",
+			"description": "Where a media item sits after the call, carrying the track it is on as well as its bounds. The track GUID is included because an item can be moved between tracks, so \"where is it now\" is two questions.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"trackGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"position": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"length": {
+					"type": "number",
+					"description": "Item length in seconds.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Name of the item's active take, which is what REAPER shows on the item.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"trackGuid",
+				"position",
+				"length"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"trackReference": {
+			"type": "object",
+			"description": "A track the tool acted on, named as well as identified. The GUID is what the agent addresses the track by on any follow-up call; the name is what it says to the producer, who cannot see a GUID. Returned even when the call supplied a GUID, because a name pattern resolves here rather than in the agent — a safe operation on a confident-but-imperfect match proceeds and this is how it reports which track it chose (Requirement 7.6).",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER at the time of the call.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		}
+	}
+}

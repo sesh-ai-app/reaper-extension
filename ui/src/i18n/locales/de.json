@@ -1,0 +1,107 @@
+{
+	"application": {
+		"name": "Sesh AI",
+		"tagline": "Studio-Assistent für REAPER"
+	},
+	"conversation": {
+		"historyLabel": "Gesprächsverlauf",
+		"emptyHistory": "Frag nach etwas, und es passiert in deiner Session. Nenne zum Beispiel eine Spur, einen Zeitbereich oder wie es klingen soll.",
+		"producerLabel": "Du",
+		"assistantLabel": "Sesh AI"
+	},
+	"streamingResponse": {
+		"regionLabel": "Antwort",
+		"awaitingFirstText": "Antwort wird geschrieben."
+	},
+	"responseCompleteness": {
+		"mayBeIncomplete": "Ein Teil dieser Antwort ist nicht angekommen, daher kann das Angezeigte unvollständig sein.",
+		"missingSequences": "Fehlende Fragmente: {{sequences}}"
+	},
+	"toolActivity": {
+		"awaitingResponse": "Sesh AI arbeitet an deiner Anfrage.",
+		"streamingResponse": "Sesh AI antwortet."
+	},
+	"producerPrompt": {
+		"inputLabel": "Sesh AI fragen",
+		"inputPlaceholder": "Beschreibe, was du in deiner Session machen willst",
+		"send": "Senden",
+		"charactersRemaining": "Noch {{remaining}} Zeichen",
+		"refusal": {
+			"promptTextTooLong": "Dieser Prompt ist zu lang, um gesendet zu werden. Kürze ihn und versuche es erneut.",
+			"transportUnavailable": "Das Panel konnte die Erweiterung nicht erreichen, daher wurde nichts gesendet. Dein Prompt ist noch da.",
+			"notSent": "Der Prompt konnte nicht gesendet werden. Er ist noch da, du kannst es also erneut versuchen."
+		}
+	},
+	"connectionStatus": {
+		"connected": "Mit deiner Session verbunden.",
+		"reconnecting": "Die Verbindung ist abgebrochen. Die Verbindung wird wiederhergestellt.",
+		"disconnected": "Nicht mit deiner Session verbunden.",
+		"closeTheOtherReaperInstance": "Eine andere REAPER-Instanz hält diese Session. Schließe sie, dann verbindet sich dieses Panel — von selbst versucht es das nicht weiter.",
+		"signInAgain": "Deine Anmeldung ist nicht mehr gültig. Melde dich erneut an, um die Verbindung wiederherzustellen.",
+		"failedAttempts": "Fehlgeschlagene Versuche seit der letzten Verbindung: {{attempts}}"
+	},
+	"streamError": {
+		"heading": "Etwas ist schiefgelaufen",
+		"dismiss": "Schließen",
+		"diagnosticsLabel": "Technische Details",
+		"code": "Code: {{code}}",
+		"whileHandling": "Beim Verarbeiten von: {{envelopeType}}",
+		"byCode": {
+			"stage_creation_failed": "Das Audio-Streaming konnte nicht eingerichtet werden, daher gibt es noch nichts, was sich aus der Ferne abhören lässt. Deine Session bleibt unverändert.",
+			"participant_token_issuance_failed": "Das Audio-Streaming konnte nicht autorisiert werden, daher gibt es noch nichts, was sich aus der Ferne abhören lässt. Deine Session bleibt unverändert."
+		}
+	},
+	"confirmation": {
+		"heading": "Diese Aktion genehmigen?",
+		"risk": "Risiko: {{level}}",
+		"riskLevel": {
+			"low": "niedrig",
+			"medium": "mittel",
+			"high": "hoch"
+		},
+		"riskNotReported": "Sesh AI hat nicht angegeben, wie riskant das ist. Das oben angezeigte Risiko ist daher die vorsichtige Annahme der Erweiterung selbst und keine Bewertung dieser Aktion.",
+		"detailsLabel": "Was davon betroffen ist",
+		"detailsUnavailable": "Mit dieser Anfrage sind keine weiteren Details angekommen.",
+		"descriptionIncomplete": "Ein Teil dieser Anfrage ist nicht angekommen. Die Beschreibung oben deckt daher möglicherweise nicht alles ab, was diese Aktion tun würde.",
+		"timeRemaining": "Verbleibende Zeit zum Antworten: {{remaining}}",
+		"timeElapsed": "Die Zeit zum Antworten ist abgelaufen. Es wird noch darauf gewartet, was passiert ist.",
+		"windowExplanation": "Wird das nicht rechtzeitig beantwortet, wird die Aktion abgebrochen und in deiner Session ändert sich nichts.",
+		"approve": "Genehmigen",
+		"reject": "Ablehnen",
+		"answerSubmitted": "Deine Antwort wurde gesendet. Es wird auf die Bestätigung gewartet.",
+		"answerNotSent": "Deine Antwort hat das Panel nicht verlassen, es ist also noch nichts beantwortet. Versuche es erneut.",
+		"resolution": {
+			"approved": "Diese Aktion wurde genehmigt.",
+			"rejected": "Diese Aktion wurde abgelehnt.",
+			"expired": "Die Zeit zum Antworten ist abgelaufen, daher wurde die Aktion abgebrochen.",
+			"unknown": "Diese Anfrage wartet nicht mehr auf eine Antwort.",
+			"nothingWasChanged": "In deiner Session wurde nichts geändert.",
+			"answeredHere": "Du hast sie hier beantwortet.",
+			"answeredOnThePhone": "Sie wurde auf deinem Telefon beantwortet.",
+			"answeredElsewhere": "Sie wurde auf einem anderen Gerät beantwortet.",
+			"approvalDidNotTakeEffect": "Du hast sie genehmigt, aber sie war schon anders entschieden. Deine Genehmigung ist daher nicht wirksam geworden.",
+			"rejectionDidNotTakeEffect": "Du hast sie abgelehnt, aber sie war schon anders entschieden. Deine Ablehnung ist daher nicht wirksam geworden.",
+			"verdictDidNotTakeEffect": "Deine Antwort kam zu spät, um zu zählen, und ist daher nicht wirksam geworden.",
+			"dismiss": "Schließen"
+		}
+	},
+	"scriptDownload": {
+		"regionLabel": "Generiertes ReaScript",
+		"explanation": "Sesh AI hat dieses Skript geschrieben, damit du es selbst liest und ausführst. Die Erweiterung führt es nicht aus.",
+		"download": "Herunterladen",
+		"downloadNamed": "{{fileName}} herunterladen",
+		"size": "Größe: {{size}}",
+		"expiresAt": "Dieser Download-Link funktioniert bis {{time}}.",
+		"expired": "Dieser Download-Link ist abgelaufen. Frag Sesh AI erneut nach dem Skript, um einen neuen Link zu bekommen."
+	},
+	"streamIngest": {
+		"regionLabel": "Audio-Streaming-Daten",
+		"explanation": "Füge diese Werte in ReaCast ein, um das Audio deiner Session nach außen zu senden.",
+		"ingestUrlLabel": "Ziel-URL",
+		"streamKeyLabel": "Stream-Key",
+		"participantLabel": "Teilnehmer",
+		"expiresAt": "Diese Daten funktionieren bis {{time}}.",
+		"expired": "Diese Streaming-Daten sind abgelaufen. Bitte Sesh AI, das Streaming erneut einzurichten.",
+		"reissued": "Diese Daten wurden erneuert. Verwende den hier angezeigten Stream-Key."
+	}
+}

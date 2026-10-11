@@ -1,0 +1,159 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/update-marker-or-region.schema.json",
+	"title": "update_marker_or_region result",
+	"description": "What update_marker_or_region returns, as one of two closed shapes. The tool takes a GUID without being told which kind of thing it addresses, so the result has to say — and a marker has a position while a region has a start and an end, which is not a difference an optional field expresses honestly. Split on the discriminator instead, the way messages/tool-result-partial.schema.json splits an action outcome on success: a region result that carries no end is then a schema violation rather than something the agent has to cope with. Both branches carry the undo report fields defined by messages/tool-result-undo.schema.json, since either update is a mutation.",
+	"type": "object",
+	"oneOf": [
+		{
+			"type": "object",
+			"description": "A marker was updated.",
+			"properties": {
+				"kind": {
+					"type": "string",
+					"description": "Always marker on this branch.",
+					"const": "marker"
+				},
+				"marker": {
+					"$ref": "#/definitions/markerDetail"
+				},
+				"undoPositionBefore": {
+					"$ref": "#/definitions/undoPositionBefore"
+				},
+				"undoDescription": {
+					"$ref": "#/definitions/undoDescription"
+				}
+			},
+			"required": [
+				"kind",
+				"marker",
+				"undoPositionBefore"
+			],
+			"additionalProperties": false
+		},
+		{
+			"type": "object",
+			"description": "A region was updated, so the result carries a span rather than a point.",
+			"properties": {
+				"kind": {
+					"type": "string",
+					"description": "Always region on this branch.",
+					"const": "region"
+				},
+				"region": {
+					"$ref": "#/definitions/regionDetail"
+				},
+				"undoPositionBefore": {
+					"$ref": "#/definitions/undoPositionBefore"
+				},
+				"undoDescription": {
+					"$ref": "#/definitions/undoDescription"
+				}
+			},
+			"required": [
+				"kind",
+				"region",
+				"undoPositionBefore"
+			],
+			"additionalProperties": false
+		}
+	],
+	"definitions": {
+		"markerDetail": {
+			"type": "object",
+			"description": "A project marker. The GUID is what addresses it in update_marker_or_region and delete_marker_or_region; the index is what the producer sees in REAPER and is renumbered as markers are added and removed, so it is reported but must not be used for addressing.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"index": {
+					"type": "integer",
+					"description": "Marker index as assigned by REAPER.",
+					"minimum": 0
+				},
+				"position": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"name": {
+					"type": "string",
+					"description": "Marker name.",
+					"maxLength": 512
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"guid",
+				"index",
+				"position",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"color": {
+			"type": "string",
+			"description": "Colour as a six-digit hexadecimal RGB string prefixed with #.",
+			"pattern": "^#[0-9A-Fa-f]{6}$"
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		},
+		"regionDetail": {
+			"type": "object",
+			"description": "A project region. Its start and end are what turn a request framed by section — \"render the chorus\" — into a time span, so both are always reported.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"index": {
+					"type": "integer",
+					"description": "Region index as assigned by REAPER.",
+					"minimum": 0
+				},
+				"start": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"end": {
+					"type": "number",
+					"description": "Region end position in seconds. Always greater than start — the extension refuses to write a region that is not (Requirement 9.6).",
+					"exclusiveMinimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Region name.",
+					"maxLength": 512
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"guid",
+				"index",
+				"start",
+				"end",
+				"name"
+			],
+			"additionalProperties": false
+		}
+	}
+}

@@ -1,0 +1,36 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/stream-error.schema.json",
+	"title": "Stream Error",
+	"description": "Payload of the stream:error envelope. Tells the requesting client that audio streaming could not be set up, with a machine-readable code and a message safe to show a producer (Requirement 15.6).",
+	"type": "object",
+	"properties": {
+		"code": {
+			"type": "string",
+			"description": "Machine-readable failure code, for example stage_creation_failed or participant_token_issuance_failed.",
+			"pattern": "^[a-z][a-z0-9_]*$",
+			"maxLength": 64
+		},
+		"message": {
+			"type": "string",
+			"description": "Human-readable failure reason, safe to display in the client.",
+			"minLength": 1,
+			"maxLength": 1024
+		},
+		"envelopeType": {
+			"type": "string",
+			"description": "Envelope type that triggered the failure, when the error answers a specific inbound envelope.",
+			"maxLength": 64
+		},
+		"validationErrors": {
+			"type": "string",
+			"description": "Rendered schema validation failures, when the failure was a payload that did not match its schema.",
+			"maxLength": 4096
+		}
+	},
+	"required": [
+		"code",
+		"message"
+	],
+	"additionalProperties": false
+}

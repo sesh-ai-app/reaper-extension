@@ -1,0 +1,494 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/project-context.schema.json",
+	"title": "REAPER Project Context",
+	"description": "Snapshot of the producer's REAPER session state, sent by the extension as the payload of a state:project_context or response:project_context envelope. Held in memory by the Session State Manager and passed to AgentCore with each prompt invocation. This is what the agent knows about the session, so anything absent here is something it cannot act on: the routing graph, folder structure, the master track, and per-item detail are all carried for that reason rather than for completeness. Tracks are addressed by GUID throughout, because track order changes and an index captured in one snapshot can name a different track by the time a tool call lands.",
+	"type": "object",
+	"properties": {
+		"projectName": {
+			"type": "string",
+			"description": "Name of the open REAPER project file, without path or extension.",
+			"maxLength": 512
+		},
+		"tempo": {
+			"type": "number",
+			"description": "Project tempo in beats per minute at the start of the timeline.",
+			"minimum": 1,
+			"maximum": 960
+		},
+		"timeSignature": {
+			"$ref": "#/definitions/timeSignature"
+		},
+		"sampleRate": {
+			"type": "integer",
+			"description": "Project sample rate in Hz.",
+			"minimum": 8000,
+			"maximum": 768000
+		},
+		"projectLength": {
+			"type": "number",
+			"description": "Total project length in seconds.",
+			"minimum": 0
+		},
+		"cursorPosition": {
+			"type": "number",
+			"description": "Edit cursor position in seconds.",
+			"minimum": 0
+		},
+		"playState": {
+			"type": "string",
+			"description": "Current transport state.",
+			"enum": [
+				"stopped",
+				"playing",
+				"paused",
+				"recording"
+			]
+		},
+		"tracks": {
+			"type": "array",
+			"description": "All tracks in the project, in REAPER's track order. Order is significant beyond presentation: folder structure is encoded as a depth delta per track and is reconstructed by accumulating folderDepth across this array, so reordering it changes what the structure means.",
+			"items": {
+				"$ref": "#/definitions/track"
+			}
+		},
+		"masterTrack": {
+			"$ref": "#/definitions/masterTrack"
+		},
+		"markers": {
+			"type": "array",
+			"description": "All project markers, ordered by position. The extension's own snapshot carries markerCount instead and leaves this absent, because the full list recurs every turn and is read on demand with list_markers. Retained so a producer of this payload that already holds the detail can send it.",
+			"items": {
+				"$ref": "#/definitions/marker"
+			}
+		},
+		"regions": {
+			"type": "array",
+			"description": "All project regions, ordered by start position. See markers: the extension sends regionCount instead and list_regions reads the detail.",
+			"items": {
+				"$ref": "#/definitions/region"
+			}
+		},
+		"markerCount": {
+			"type": "integer",
+			"description": "How many project markers exist. Carried instead of the markers array so the agent knows whether the arrangement is labelled at all without the labels costing context window space every turn. Read the detail with list_markers.",
+			"minimum": 0
+		},
+		"regionCount": {
+			"type": "integer",
+			"description": "How many project regions exist. Carried instead of the regions array, for the same reason as markerCount. Read the detail with list_regions.",
+			"minimum": 0
+		},
+		"tempoChangeCount": {
+			"type": "integer",
+			"description": "How many tempo or time signature changes exist beyond the initial values. Zero means the reported tempo and time signature hold for the whole timeline; anything else means they do not, and list_tempo_changes is the only way to find out where. REAPER keeps tempo changes in a tempo map rather than on markers or regions, so a session that changes tempo at bar 33 is invisible to the agent without this count. Spelled and bounded as get_project_summary's field of the same name, so a count read from either side means the same thing.",
+			"minimum": 0
+		},
+		"selectedTrackGuids": {
+			"type": "array",
+			"description": "GUIDs of the currently selected tracks. Identified by GUID rather than by index so that a selection-scoped operation acts on the tracks the producer actually highlighted, even if the track order changed between the snapshot and the tool call.",
+			"items": {
+				"$ref": "#/definitions/guid"
+			},
+			"maxItems": 4096
+		},
+		"timeSelectionStart": {
+			"type": "number",
+			"description": "Start of the time selection in seconds. Absent when nothing is selected.",
+			"minimum": 0
+		},
+		"timeSelectionEnd": {
+			"type": "number",
+			"description": "End of the time selection in seconds. Absent when nothing is selected.",
+			"minimum": 0
+		},
+		"loopStart": {
+			"type": "number",
+			"description": "Loop region start in seconds.",
+			"minimum": 0
+		},
+		"loopEnd": {
+			"type": "number",
+			"description": "Loop region end in seconds.",
+			"minimum": 0
+		},
+		"loopEnabled": {
+			"type": "boolean",
+			"description": "Whether looped playback is enabled."
+		}
+	},
+	"required": [
+		"projectName",
+		"tempo",
+		"timeSignature",
+		"sampleRate",
+		"tracks"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form. Survives track reordering, renaming, and project reload, which an index does not.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"volumeDecibels": {
+			"type": "number",
+			"description": "Fader level in decibels, where 0 is unity. Decibels rather than linear gain because that is the unit producers and REAPER's own UI use, so \"bring it down 3 dB\" needs no conversion. The floor is -150 rather than negative infinity: a silent track is expressed through the muted flag, which is reversible and visible, instead of through an unrepresentable number.",
+			"minimum": -150,
+			"maximum": 12
+		},
+		"panPercent": {
+			"type": "number",
+			"description": "Pan position as a percentage, where -100 is hard left, 0 is centre, and 100 is hard right. A percentage because producers say \"30% left\"; the extension converts to REAPER's -1..1.",
+			"minimum": -100,
+			"maximum": 100
+		},
+		"timeSignature": {
+			"type": "object",
+			"description": "Project time signature at the start of the timeline.",
+			"properties": {
+				"numerator": {
+					"type": "integer",
+					"description": "Beats per measure.",
+					"minimum": 1,
+					"maximum": 64
+				},
+				"denominator": {
+					"type": "integer",
+					"description": "Note value that represents one beat.",
+					"enum": [
+						1,
+						2,
+						4,
+						8,
+						16,
+						32,
+						64
+					]
+				}
+			},
+			"required": [
+				"numerator",
+				"denominator"
+			],
+			"additionalProperties": false
+		},
+		"structuralRole": {
+			"type": "string",
+			"description": "What this track does in the session's signal flow, derived by the extension from folder depth, parent send state, item count, FX presence, and receive count. REAPER has no bus object, so a producer's \"drum bus\" is one of these shapes rather than a thing the API can be asked for. The role is what the agent should reason with; the raw signals it was derived from travel alongside it so that a wrong role is diagnosable from a log rather than invisible.",
+			"enum": [
+				"summing_folder_parent",
+				"silent_folder_parent",
+				"aux_return",
+				"normal",
+				"master"
+			]
+		},
+		"sendMode": {
+			"type": "string",
+			"description": "Where in the source track's signal chain the send is taken from. Changes what the send carries, so it is not cosmetic.",
+			"enum": [
+				"post_fader",
+				"pre_fx",
+				"post_fx"
+			]
+		},
+		"send": {
+			"type": "object",
+			"description": "One explicit send or receive. The same shape serves both directions: trackGuid names the far end, so on a track's sends it is the destination and on its receives it is the source. Explicit sends are only one of the three ways REAPER sums signal — folder summing and the master send are the others, and neither appears here, which is why folderDepth and parentSendEnabled are carried separately.",
+			"properties": {
+				"index": {
+					"type": "integer",
+					"description": "Index of this send on the source track, which is how REAPER addresses it. A track can hold more than one send to the same destination, so the far-end GUID alone does not identify it.",
+					"minimum": 0
+				},
+				"trackGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"volume": {
+					"$ref": "#/definitions/volumeDecibels"
+				},
+				"pan": {
+					"$ref": "#/definitions/panPercent"
+				},
+				"muted": {
+					"type": "boolean",
+					"description": "Whether the send is muted."
+				},
+				"mode": {
+					"$ref": "#/definitions/sendMode"
+				}
+			},
+			"required": [
+				"trackGuid"
+			],
+			"additionalProperties": false
+		},
+		"item": {
+			"type": "object",
+			"description": "One media item on a track. Carried per item rather than as a count because every item tool has to say which items it means, and a count cannot be targeted.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"position": {
+					"type": "number",
+					"description": "Item start position on the timeline in seconds.",
+					"minimum": 0
+				},
+				"length": {
+					"type": "number",
+					"description": "Item length in seconds.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Name of the item's active take, which is what REAPER shows on the item.",
+					"maxLength": 512
+				},
+				"muted": {
+					"type": "boolean",
+					"description": "Whether the item is muted."
+				},
+				"selected": {
+					"type": "boolean",
+					"description": "Whether the item is part of the current selection, so that a selection-scoped tool can be told what it will act on."
+				}
+			},
+			"required": [
+				"guid",
+				"position",
+				"length"
+			],
+			"additionalProperties": false
+		},
+		"track": {
+			"type": "object",
+			"description": "A single track in the project.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"index": {
+					"type": "integer",
+					"description": "Zero-based position in the project's track order. Carried so the agent can say \"track 7\" when talking to a producer who is looking at REAPER's track numbers. NOT an addressing mechanism — every tool targets a track by GUID or name pattern, because an index captured in this snapshot may name a different track by the time a tool call lands.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Track name as shown in REAPER.",
+					"maxLength": 512
+				},
+				"alias": {
+					"type": "string",
+					"description": "What the producer calls this track, learned in conversation and persisted on the track itself so the same question is not asked twice. Present only once learned. Read as of the last project save, since it is stored in the project file.",
+					"maxLength": 512
+				},
+				"folderDepth": {
+					"type": "integer",
+					"description": "The raw I_FOLDERDEPTH delta for this track: 1 means this track opens a folder, 0 means it is a sibling, and a negative value closes that many folders after it. REAPER stores no parent pointer, so parentage exists only as the running total of these deltas across the tracks array — which is also why any insert, delete, or reorder can change the structure of tracks the operation never touched.",
+					"minimum": -64,
+					"maximum": 1
+				},
+				"parentSendEnabled": {
+					"type": "boolean",
+					"description": "The track's B_MAINSEND flag: whether its output feeds its parent. The target is the enclosing folder parent when the track is inside a folder, and the master track when it is not. This is invisible to send enumeration, so a folder parent whose children have it switched off looks like a summing bus and sums nothing."
+				},
+				"role": {
+					"$ref": "#/definitions/structuralRole"
+				},
+				"armed": {
+					"type": "boolean",
+					"description": "Whether the track is armed for recording."
+				},
+				"muted": {
+					"type": "boolean",
+					"description": "Whether the track is muted."
+				},
+				"soloed": {
+					"type": "boolean",
+					"description": "Whether the track is soloed. Named to match set_track_state's `soloed` and list_tracks' `soloed`, so a value the agent reads back here is a value it can write, and to match its sibling participles `muted` and `armed` in this same object."
+				},
+				"volume": {
+					"$ref": "#/definitions/volumeDecibels"
+				},
+				"pan": {
+					"$ref": "#/definitions/panPercent"
+				},
+				"fxChain": {
+					"type": "array",
+					"description": "Names of the FX on the track's FX chain, in chain order. Order matters to the sound, so this is a sequence rather than a set.",
+					"items": {
+						"type": "string",
+						"maxLength": 512
+					}
+				},
+				"sends": {
+					"type": "array",
+					"description": "Explicit sends from this track.",
+					"items": {
+						"$ref": "#/definitions/send"
+					},
+					"maxItems": 256
+				},
+				"receives": {
+					"type": "array",
+					"description": "Explicit receives into this track. Carried separately from sends because send enumeration alone cannot tell a return track from an ordinary one — what makes a track an aux return is that things feed it.",
+					"items": {
+						"$ref": "#/definitions/send"
+					},
+					"maxItems": 256
+				},
+				"items": {
+					"type": "array",
+					"description": "Media items on this track, in timeline order.",
+					"items": {
+						"$ref": "#/definitions/item"
+					},
+					"maxItems": 4096
+				},
+				"itemCount": {
+					"type": "integer",
+					"description": "Number of media items on the track. Retained alongside items so the extension can report a count for a track whose items it did not enumerate, rather than having to choose between sending everything and sending nothing.",
+					"minimum": 0
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"guid",
+				"index",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"masterTrack": {
+			"type": "object",
+			"description": "The project's master track. Shaped like a track but not one: it sits outside the indexed track list, so it has no index and no folder depth, it holds no media items, and it has no parent to send to. Carried because it is where everything sums and a producer asking to put a limiter on the mix means this track.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"name": {
+					"type": "string",
+					"description": "Display name of the master track.",
+					"maxLength": 512
+				},
+				"role": {
+					"$ref": "#/definitions/structuralRole"
+				},
+				"muted": {
+					"type": "boolean",
+					"description": "Whether the master track is muted."
+				},
+				"volume": {
+					"$ref": "#/definitions/volumeDecibels"
+				},
+				"pan": {
+					"$ref": "#/definitions/panPercent"
+				},
+				"fxChain": {
+					"type": "array",
+					"description": "Names of the FX on the master FX chain, in chain order.",
+					"items": {
+						"type": "string",
+						"maxLength": 512
+					}
+				},
+				"receives": {
+					"type": "array",
+					"description": "Explicit receives into the master track. Does not include the tracks that reach it through their parent send, which is how most signal arrives.",
+					"items": {
+						"$ref": "#/definitions/send"
+					},
+					"maxItems": 256
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"guid"
+			],
+			"additionalProperties": false
+		},
+		"marker": {
+			"type": "object",
+			"description": "A project marker.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"index": {
+					"type": "integer",
+					"description": "Marker index as assigned by REAPER.",
+					"minimum": 0
+				},
+				"position": {
+					"type": "number",
+					"description": "Marker position in seconds.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Marker name.",
+					"maxLength": 512
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"index",
+				"position",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"region": {
+			"type": "object",
+			"description": "A project region.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"index": {
+					"type": "integer",
+					"description": "Region index as assigned by REAPER.",
+					"minimum": 0
+				},
+				"start": {
+					"type": "number",
+					"description": "Region start position in seconds.",
+					"minimum": 0
+				},
+				"end": {
+					"type": "number",
+					"description": "Region end position in seconds. Must be greater than start.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Region name.",
+					"maxLength": 512
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"index",
+				"start",
+				"end",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"color": {
+			"type": "string",
+			"description": "Colour as a six-digit hexadecimal RGB string prefixed with #.",
+			"pattern": "^#[0-9A-Fa-f]{6}$"
+		}
+	}
+}

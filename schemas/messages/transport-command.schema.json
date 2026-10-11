@@ -1,0 +1,26 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/transport-command.schema.json",
+	"title": "Transport Command",
+	"description": "Payload of a request:transport envelope. Sent by the mobile PWA and forwarded to the paired REAPER extension to control playback.",
+	"type": "object",
+	"properties": {
+		"command": {
+			"type": "string",
+			"description": "Transport action for the extension to perform.",
+			"enum": [
+				"play",
+				"pause",
+				"stop",
+				"return_to_zero",
+				"previous_marker",
+				"next_marker",
+				"loop_toggle"
+			]
+		}
+	},
+	"required": [
+		"command"
+	],
+	"additionalProperties": false
+}

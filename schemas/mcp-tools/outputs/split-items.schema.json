@@ -1,0 +1,117 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/split-items.schema.json",
+	"title": "split_items result",
+	"description": "What split_items returns: the two items each split produced, paired with the item they came from. REAPER mints a new GUID for the second half, so without this pairing the agent cannot address either piece afterwards — and \"the part after the split\" is usually what the producer meant to act on next. Items the split position fell outside are reported as skipped rather than silently ignored: a split that landed on nothing is a sign the position was wrong, not that the work is done. A mutating tool, so it carries the undo report fields defined by messages/tool-result-undo.schema.json, and undo rejoins the halves.",
+	"type": "object",
+	"properties": {
+		"splits": {
+			"type": "array",
+			"description": "One entry per item that was actually split, in timeline order.",
+			"items": {
+				"$ref": "#/definitions/itemSplit"
+			},
+			"maxItems": 4096
+		},
+		"skippedItemGuids": {
+			"type": "array",
+			"description": "Items the split position did not fall inside, so nothing was done to them. Empty in the ordinary case. A list equal to everything the call named means the position missed every item, which the agent should treat as a wrong position rather than a completed split.",
+			"items": {
+				"$ref": "#/definitions/guid"
+			},
+			"maxItems": 4096
+		},
+		"position": {
+			"$ref": "#/definitions/timelinePosition"
+		},
+		"undoPositionBefore": {
+			"$ref": "#/definitions/undoPositionBefore"
+		},
+		"undoDescription": {
+			"$ref": "#/definitions/undoDescription"
+		}
+	},
+	"required": [
+		"splits",
+		"skippedItemGuids",
+		"position",
+		"undoPositionBefore"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"itemSplit": {
+			"type": "object",
+			"description": "One item split into two. The left half keeps the original's GUID and the right half is new, which is worth stating rather than leaving the agent to work out which of the two it already had a handle on.",
+			"properties": {
+				"originalItemGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"leftItem": {
+					"$ref": "#/definitions/itemPlacement"
+				},
+				"rightItem": {
+					"$ref": "#/definitions/itemPlacement"
+				}
+			},
+			"required": [
+				"originalItemGuid",
+				"leftItem",
+				"rightItem"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"undoPositionBefore": {
+			"type": "integer",
+			"description": "REAPER undo stack position captured by the extension immediately before this tool applied its change. A \"revert all AI changes\" operation calls Undo_DoUndo2 in a loop until the stack is back at this position.",
+			"minimum": 0
+		},
+		"undoDescription": {
+			"type": "string",
+			"description": "Undo point description the extension passed to Undo_EndBlock2 for this tool, persisted with the tool_result message so the chat UI can list what the agent changed.",
+			"minLength": 1,
+			"maxLength": 512
+		},
+		"itemPlacement": {
+			"type": "object",
+			"description": "Where a media item sits after the call, carrying the track it is on as well as its bounds. The track GUID is included because an item can be moved between tracks, so \"where is it now\" is two questions.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"trackGuid": {
+					"$ref": "#/definitions/guid"
+				},
+				"position": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"length": {
+					"type": "number",
+					"description": "Item length in seconds.",
+					"minimum": 0
+				},
+				"name": {
+					"type": "string",
+					"description": "Name of the item's active take, which is what REAPER shows on the item.",
+					"maxLength": 512
+				}
+			},
+			"required": [
+				"guid",
+				"trackGuid",
+				"position",
+				"length"
+			],
+			"additionalProperties": false
+		}
+	}
+}

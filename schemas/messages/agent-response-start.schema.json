@@ -1,0 +1,33 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/agent-response-start.schema.json",
+	"title": "Agent Response Start",
+	"description": "Payload of the stream:agent_response_start envelope. Sent to every connected client when the AgentCore harness begins streaming an assistant response, so each client can open a new message bubble before the first token arrives.",
+	"type": "object",
+	"properties": {
+		"conversationId": {
+			"type": "string",
+			"description": "ULID of the conversation the response belongs to.",
+			"minLength": 1,
+			"maxLength": 64
+		},
+		"turnId": {
+			"type": "string",
+			"description": "ULID of the agent turn. Matches the turn the Session State Manager opened for undo position tracking.",
+			"minLength": 1,
+			"maxLength": 64
+		},
+		"messageId": {
+			"type": "string",
+			"description": "ULID the assembled assistant message will be persisted under, so a client can reconcile the streamed text with conversation history.",
+			"minLength": 1,
+			"maxLength": 64
+		}
+	},
+	"required": [
+		"conversationId",
+		"turnId",
+		"messageId"
+	],
+	"additionalProperties": false
+}

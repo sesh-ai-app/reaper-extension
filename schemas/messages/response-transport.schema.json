@@ -1,0 +1,19 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/messages/response-transport.schema.json",
+	"title": "Transport Command Acknowledgement",
+	"description": "Payload of a response:transport envelope. The REAPER extension sends it after executing a transport command the PWA asked for, and the Message Router forwards it to the session's PWA (Requirement 14.1). Correlation is the whole content: the PWA generated the requestId on its request:transport, holds the command it sent, and only needs to know that this particular one landed. Nothing else is reported because nothing else is knowable at the moment of acknowledgement — REAPER's transport actions do not fail in a way the extension can observe, and the resulting play state reaches both clients through the project context snapshot rather than through this reply.",
+	"type": "object",
+	"properties": {
+		"requestId": {
+			"type": "string",
+			"description": "The requestId the request:transport envelope carried, echoed so the PWA can match this acknowledgement to the command it sent. The envelope carries it as well and that is the copy the router forwards; it is repeated here so the payload identifies its own subject.",
+			"minLength": 1,
+			"maxLength": 128
+		}
+	},
+	"required": [
+		"requestId"
+	],
+	"additionalProperties": false
+}

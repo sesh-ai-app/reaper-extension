@@ -1,0 +1,107 @@
+{
+	"application": {
+		"name": "Sesh AI",
+		"tagline": "Assistant de studio pour REAPER"
+	},
+	"conversation": {
+		"historyLabel": "Historique de la conversation",
+		"emptyHistory": "Demandez quelque chose et cela se produit dans votre session. Essayez de nommer une piste, une plage de temps ou le son que vous recherchez.",
+		"producerLabel": "Vous",
+		"assistantLabel": "Sesh AI"
+	},
+	"streamingResponse": {
+		"regionLabel": "Réponse",
+		"awaitingFirstText": "Rédaction d'une réponse."
+	},
+	"responseCompleteness": {
+		"mayBeIncomplete": "Une partie de cette réponse n'est pas arrivée, donc ce que vous voyez peut être incomplet.",
+		"missingSequences": "Fragments manquants : {{sequences}}"
+	},
+	"toolActivity": {
+		"awaitingResponse": "Sesh AI traite votre demande.",
+		"streamingResponse": "Sesh AI répond."
+	},
+	"producerPrompt": {
+		"inputLabel": "Demander à Sesh AI",
+		"inputPlaceholder": "Décrivez ce que vous voulez faire dans votre session",
+		"send": "Envoyer",
+		"charactersRemaining": "Caractères restants : {{remaining}}",
+		"refusal": {
+			"promptTextTooLong": "Ce prompt est trop long pour être envoyé. Raccourcissez-le et réessayez.",
+			"transportUnavailable": "Le panneau n'a pas pu joindre l'extension, donc rien n'a été envoyé. Votre prompt est toujours là.",
+			"notSent": "Le prompt n'a pas pu être envoyé. Il est toujours là, vous pouvez donc réessayer."
+		}
+	},
+	"connectionStatus": {
+		"connected": "Connecté à votre session.",
+		"reconnecting": "La connexion a été perdue. Reconnexion en cours.",
+		"disconnected": "Non connecté à votre session.",
+		"closeTheOtherReaperInstance": "Une autre instance de REAPER occupe cette session. Fermez-la et ce panneau se connectera ; il ne réessaiera pas de lui-même.",
+		"signInAgain": "Votre authentification n'est plus valide. Authentifiez-vous à nouveau pour vous reconnecter.",
+		"failedAttempts": "Tentatives échouées depuis la dernière connexion : {{attempts}}"
+	},
+	"streamError": {
+		"heading": "Un problème est survenu",
+		"dismiss": "Fermer",
+		"diagnosticsLabel": "Détail technique",
+		"code": "Code : {{code}}",
+		"whileHandling": "Pendant le traitement de : {{envelopeType}}",
+		"byCode": {
+			"stage_creation_failed": "La diffusion audio n'a pas pu être mise en place, il n'y a donc rien à écouter à distance pour le moment. Votre session n'a pas été modifiée.",
+			"participant_token_issuance_failed": "La diffusion audio n'a pas pu être autorisée, il n'y a donc rien à écouter à distance pour le moment. Votre session n'a pas été modifiée."
+		}
+	},
+	"confirmation": {
+		"heading": "Approuver cette action ?",
+		"risk": "Risque : {{level}}",
+		"riskLevel": {
+			"low": "faible",
+			"medium": "moyen",
+			"high": "élevé"
+		},
+		"riskNotReported": "Sesh AI n'a pas indiqué le risque associé, donc le risque affiché ci-dessus est l'hypothèse prudente de l'extension elle-même et non une évaluation de cette action.",
+		"detailsLabel": "Ce que cela affecte",
+		"detailsUnavailable": "Aucun détail supplémentaire n'est arrivé avec cette demande.",
+		"descriptionIncomplete": "Une partie de cette demande n'est pas arrivée, donc la description ci-dessus peut ne pas couvrir tout ce que cette action ferait.",
+		"timeRemaining": "Temps restant pour répondre : {{remaining}}",
+		"timeElapsed": "Le temps pour répondre est écoulé. En attente de savoir ce qui s'est passé.",
+		"windowExplanation": "Sans réponse dans le délai, l'action est annulée et rien ne change dans votre session.",
+		"approve": "Approuver",
+		"reject": "Refuser",
+		"answerSubmitted": "Votre réponse a été envoyée. En attente de confirmation.",
+		"answerNotSent": "Votre réponse n'a pas quitté le panneau, donc rien n'a encore été répondu. Réessayez.",
+		"resolution": {
+			"approved": "Cette action a été approuvée.",
+			"rejected": "Cette action a été refusée.",
+			"expired": "Le temps pour répondre est écoulé, l'action a donc été annulée.",
+			"unknown": "Cette demande n'attend plus de réponse.",
+			"nothingWasChanged": "Rien n'a été modifié dans votre session.",
+			"answeredHere": "Vous y avez répondu ici.",
+			"answeredOnThePhone": "La réponse a été donnée sur votre téléphone.",
+			"answeredElsewhere": "La réponse a été donnée sur un autre appareil.",
+			"approvalDidNotTakeEffect": "Vous l'avez approuvée, mais elle avait déjà été tranchée dans l'autre sens, votre approbation n'a donc pas pris effet.",
+			"rejectionDidNotTakeEffect": "Vous l'avez refusée, mais elle avait déjà été tranchée dans l'autre sens, votre refus n'a donc pas pris effet.",
+			"verdictDidNotTakeEffect": "Votre réponse est arrivée trop tard pour compter, elle n'a donc pas pris effet.",
+			"dismiss": "Fermer"
+		}
+	},
+	"scriptDownload": {
+		"regionLabel": "ReaScript généré",
+		"explanation": "Sesh AI a écrit ce script pour que vous le lisiez et l'exécutiez vous-même. L'extension ne l'exécute pas.",
+		"download": "Télécharger",
+		"downloadNamed": "Télécharger {{fileName}}",
+		"size": "Taille : {{size}}",
+		"expiresAt": "Ce lien de téléchargement fonctionne jusqu'au {{time}}.",
+		"expired": "Ce lien de téléchargement a expiré. Redemandez le script à Sesh AI pour en obtenir un nouveau."
+	},
+	"streamIngest": {
+		"regionLabel": "Paramètres de diffusion audio",
+		"explanation": "Collez ces valeurs dans ReaCast pour envoyer l'audio de votre session.",
+		"ingestUrlLabel": "URL de destination",
+		"streamKeyLabel": "Clé de flux",
+		"participantLabel": "Participant",
+		"expiresAt": "Ces paramètres fonctionnent jusqu'au {{time}}.",
+		"expired": "Ces paramètres de diffusion ont expiré. Demandez à Sesh AI de reconfigurer la diffusion.",
+		"reissued": "Ces paramètres ont été renouvelés. Utilisez la clé de flux affichée ici."
+	}
+}

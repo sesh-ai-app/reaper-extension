@@ -1,0 +1,42 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/undo-last-action.schema.json",
+	"title": "undo_last_action result",
+	"description": "What undo_last_action returns: which undo entry was reverted, in REAPER's own words, so what the producer is told matches what they would have seen in REAPER's undo history. A rewinding tool, and therefore the one shape of mutating result that must not carry undoPositionBefore: that field is the marker \"revert all\" walks back to, and recording one before an undo would point at a position after the producer's own work, so walking back to it would redo what had just been reverted (Requirement 10.7). undoStackPositionAfter is reported instead.",
+	"type": "object",
+	"properties": {
+		"undoneEntryDescriptions": {
+			"$ref": "#/definitions/undoneEntryDescriptions"
+		},
+		"undoStackPositionAfter": {
+			"$ref": "#/definitions/undoStackPositionAfter"
+		},
+		"wasAgentEntry": {
+			"type": "boolean",
+			"description": "Whether the reverted entry was one the agent created. False means the producer's own edit was undone — which the extension only does after a refusal named it and they confirmed, so this is the record of that having happened rather than a surprise."
+		}
+	},
+	"required": [
+		"undoneEntryDescriptions",
+		"undoStackPositionAfter",
+		"wasAgentEntry"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"undoneEntryDescriptions": {
+			"type": "array",
+			"description": "REAPER's own descriptions of the undo entries that were reverted, in the order they were undone. REAPER's wording rather than the extension's, so what the producer is told matches what they would have seen in REAPER's undo history.",
+			"items": {
+				"type": "string",
+				"minLength": 1,
+				"maxLength": 512
+			},
+			"maxItems": 1024
+		},
+		"undoStackPositionAfter": {
+			"type": "integer",
+			"description": "REAPER undo stack position after a rewinding tool walked the stack backwards. Reported instead of undoPositionBefore, which a rewinding tool must never carry: undoPositionBefore is the marker \"revert all\" walks back to, and recording one for an undo would point at a position after the producer's own work (Requirement 10.7).",
+			"minimum": 0
+		}
+	}
+}

@@ -1,0 +1,53 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/bridge-messages/stream-ingest.schema.json",
+	"title": "Stream Ingest Display",
+	"description": "Payload of the view:stream_ingest bridge message — the Stream Presenter's StreamIngestDisplay, serialized across the CEF bridge so the producer can read the ReaCast destination and stream key and type them in (Requirement 16.2). Built on demand and not stored, so the revealed token lives as long as the publish that shows it. This is the one bridge message whose payload is a credential: streamKeyPlaintext is the IVS stream key, requirement 26.4 forbids logging it, and the C++ side enforces that by deleting the stream insertion operator for this type. The UI has no equivalent protection, so the rule has to be stated rather than structural on that side.",
+	"type": "object",
+	"properties": {
+		"stageArn": {
+			"type": "string",
+			"description": "ARN of the IVS stage the producer is publishing to. Safe to log and to show.",
+			"minLength": 1,
+			"maxLength": 2048
+		},
+		"rtmpsIngestUrl": {
+			"type": "string",
+			"description": "ReaCast's destination field. The producer pastes this in.",
+			"minLength": 1,
+			"maxLength": 2048
+		},
+		"streamKeyPlaintext": {
+			"type": "string",
+			"description": "ReaCast's stream key field, in full plaintext by default because the producer transcribes it by hand. Named for what it holds rather than mirroring the protocol's streamKey, so that it is unpleasant to see in a log line or a React devtools panel — the camelCase rule governs the case convention across this bridge, not a rename of a view model's own field.",
+			"minLength": 1,
+			"maxLength": 2048
+		},
+		"participantId": {
+			"type": "string",
+			"description": "The IVS participant identifier. Documented in stream-rtmps-url.schema.json as safe to log, and the identifier that correlates with IVS stage events — which is what a diagnostic actually needs.",
+			"minLength": 1,
+			"maxLength": 128
+		},
+		"expiresAt": {
+			"type": "string",
+			"description": "ISO-8601 timestamp the publish token stops working at. Shown beside the token so an expiry is visible before it bites.",
+			"format": "date-time"
+		},
+		"reissued": {
+			"type": "boolean",
+			"description": "True when this token replaced an earlier one (Requirement 16.3). The UI updates the displayed token rather than adding a second set of details.",
+			"default": false
+		}
+	},
+	"required": [
+		"stageArn",
+		"rtmpsIngestUrl",
+		"streamKeyPlaintext",
+		"participantId",
+		"expiresAt",
+		"reissued"
+	],
+	"additionalProperties": false,
+	"$comment": "Field-for-field the same shape as stream-rtmps-url.schema.json apart from the stream key's name, and it is still a separate document rather than a reuse. The presenter decides whether to reveal the token at all and tracks reissue across envelopes, so what crosses the bridge is its answer and not the payload — and the two can legitimately diverge, since StreamIngestLogFields is the same data minus this credential and is the half that reaches a log."
+}

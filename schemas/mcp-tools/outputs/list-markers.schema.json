@@ -1,0 +1,87 @@
+{
+	"$schema": "http://json-schema.org/draft-07/schema#",
+	"$id": "https://schemas.sesh-ai.app/mcp-tools/outputs/list-markers.schema.json",
+	"title": "list_markers result",
+	"description": "What list_markers returns: marker detail the project context snapshot only counts. Each marker carries the GUID to address it by in update_marker_or_region and delete_marker_or_region — not the index, which REAPER renumbers as markers are added and removed. totalInRange is reported so a read capped by maximumResults is visible as a capped read rather than mistaken for the whole arrangement (Requirement 23.9). A read tool, so no undo report.",
+	"type": "object",
+	"properties": {
+		"markers": {
+			"type": "array",
+			"description": "The markers in range, ordered by position. Empty when the session has none in the window, which is a complete answer.",
+			"items": {
+				"$ref": "#/definitions/markerDetail"
+			},
+			"maxItems": 100
+		},
+		"totalInRange": {
+			"$ref": "#/definitions/totalInRange"
+		},
+		"truncated": {
+			"$ref": "#/definitions/truncated"
+		}
+	},
+	"required": [
+		"markers",
+		"totalInRange",
+		"truncated"
+	],
+	"additionalProperties": false,
+	"definitions": {
+		"markerDetail": {
+			"type": "object",
+			"description": "A project marker. The GUID is what addresses it in update_marker_or_region and delete_marker_or_region; the index is what the producer sees in REAPER and is renumbered as markers are added and removed, so it is reported but must not be used for addressing.",
+			"properties": {
+				"guid": {
+					"$ref": "#/definitions/guid"
+				},
+				"index": {
+					"type": "integer",
+					"description": "Marker index as assigned by REAPER.",
+					"minimum": 0
+				},
+				"position": {
+					"$ref": "#/definitions/timelinePosition"
+				},
+				"name": {
+					"type": "string",
+					"description": "Marker name.",
+					"maxLength": 512
+				},
+				"color": {
+					"$ref": "#/definitions/color"
+				}
+			},
+			"required": [
+				"guid",
+				"index",
+				"position",
+				"name"
+			],
+			"additionalProperties": false
+		},
+		"guid": {
+			"type": "string",
+			"description": "A stable REAPER GUID, in REAPER's own braced form.",
+			"pattern": "^\\{[0-9A-Fa-f-]{36}\\}$"
+		},
+		"timelinePosition": {
+			"type": "number",
+			"description": "A position on the project timeline, in seconds from the start.",
+			"minimum": 0
+		},
+		"color": {
+			"type": "string",
+			"description": "Colour as a six-digit hexadecimal RGB string prefixed with #.",
+			"pattern": "^#[0-9A-Fa-f]{6}$"
+		},
+		"totalInRange": {
+			"type": "integer",
+			"description": "How many entries matched the call's filters before maximumResults capped the returned list. Equal to the length of the returned array when nothing was capped. Carried so that a capped read is visible to the agent rather than a silent truncation it reasons over as if it were the whole set (Requirement 23.9).",
+			"minimum": 0
+		},
+		"truncated": {
+			"type": "boolean",
+			"description": "True when totalInRange exceeds the number of entries returned. Stated rather than left to be inferred from comparing two numbers, so the agent has to notice it before telling the producer the list is complete."
+		}
+	}
+}
