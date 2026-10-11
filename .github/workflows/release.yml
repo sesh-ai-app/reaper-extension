@@ -264,11 +264,16 @@ jobs:
             # `-static-md` rather than the default `x64-windows`: static vcpkg
             # libraries against the dynamic CRT. The default would make
             # json-schema-validator a DLL the extension has to ship beside
-            # itself, and `/MD` is forced on CEF below so one CRT is in play
-            # throughout. Unverified — see the file comment.
+            # itself.
+            #
+            # The matching `/MD` for CEF's own targets is in CMakeLists.txt and
+            # not an argument here. It was an argument here, and CI proved it
+            # could not be: the configure step below runs under `shell: bash`,
+            # which on a Windows runner is Git Bash, and MSYS rewrote `/MD` into
+            # `C:/Program Files/Git/MD` — which CEF appended as a compiler flag
+            # and MSBuild then tried to open as a source file.
             vcpkg_triplet: x64-windows-static-md
             archive_format: zip
-            extra_cmake_arguments: "-DCEF_RUNTIME_LIBRARY_FLAG=/MD"
 
           # `ubuntu-22.04` because glibc 2.35 is the declared Linux floor —
           # Ubuntu 22.04 LTS and Debian 12. There is no flag for a glibc floor;

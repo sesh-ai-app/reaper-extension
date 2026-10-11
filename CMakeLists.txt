@@ -623,6 +623,40 @@ if(SESH_AI_CEF_LOCATED_ROOT)
 	set(CEF_ROOT "${SESH_AI_CEF_LOCATED_ROOT}")
 	list(APPEND CMAKE_MODULE_PATH "${CEF_ROOT}/cmake")
 
+	# One C runtime across the whole link, chosen here rather than in a workflow.
+	#
+	# CEF declares this itself, in the Windows half of cef_variables.cmake:
+	#
+	#   set(CEF_RUNTIME_LIBRARY_FLAG "/MT" CACHE STRING
+	#       "Optional flag specifying which runtime to use")
+	#
+	# `/MT` is the static CRT, and CEF applies it to libcef_dll_wrapper. Nothing
+	# else in this build uses it: MSVC's CMake default for a Release build is the
+	# dynamic CRT, and both vcpkg triplets in play resolve to it too — plain
+	# `x64-windows` in CI, `x64-windows-static-md` for a release, the `-md` suffix
+	# meaning static libraries against the *dynamic* CRT. Mixing the two is
+	# LNK2038, a hard link error rather than a warning. So the wrapper is moved to
+	# `/MD` to match everything around it, instead of moving everything to `/MT`.
+	#
+	# Set before find_package, which is what makes it take: CEF's own line is a
+	# plain `set(... CACHE ...)`, and that does not overwrite a cache entry that
+	# already exists.
+	#
+	# It lives here, and not as a `-D` in `ci.yml` and `release.yml` where it
+	# started, because it cannot survive the trip. Those workflows configure from
+	# `shell: bash`, which on a Windows runner is Git Bash, and MSYS rewrites
+	# arguments that look like POSIX paths — so `-DCEF_RUNTIME_LIBRARY_FLAG=/MD`
+	# arrived as `C:/Program Files/Git/MD`, CEF appended it as a compiler flag, and
+	# MSBuild reported `error C1083: Cannot open source file:
+	# 'C:/Program Files/Git/MD'`. `MSYS_NO_PATHCONV` or a `//MD` would both have
+	# worked and both would have left a flag whose correctness depends on the shell
+	# that launched CMake. A build decision belongs in the build.
+	if(WIN32)
+		set(CEF_RUNTIME_LIBRARY_FLAG "/MD" CACHE STRING
+			"MSVC runtime flag applied to CEF's own targets"
+		)
+	endif()
+
 	find_package(CEF REQUIRED)
 
 	# Undo CEF's deployment target, which it sets without asking.
