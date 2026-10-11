@@ -22,7 +22,7 @@
 		"i18next": "26.4.2",
 		"react": "19.3.0",
 		"react-dom": "19.3.0",
-		"react-i18next": "17.0.15",
+		"react-i18next": "17.0.16",
 		"react-markdown": "10.1.0"
 	},
 	"devDependencies": {
@@ -31,15 +31,15 @@
 		"@types/node": "24.13.0",
 		"@types/react": "19.3.0",
 		"@types/react-dom": "19.3.0",
-		"@vitejs/plugin-react": "6.1.1",
+		"@vitejs/plugin-react": "6.1.2",
 		"eslint": "9.39.5",
-		"eslint-config-airbnb-extended": "3.2.0",
+		"eslint-config-airbnb-extended": "3.3.0",
 		"fast-check": "4.10.2",
-		"globals": "17.12.0",
+		"globals": "17.13.0",
 		"jsdom": "29.1.1",
 		"typescript": "6.0.3",
-		"typescript-eslint": "8.70.1",
-		"vite": "8.3.1",
-		"vitest": "5.0.1"
+		"typescript-eslint": "8.71.1",
+		"vite": "8.3.4",
+		"vitest": "5.0.3"
 	}
 }
