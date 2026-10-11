@@ -373,8 +373,14 @@ jobs:
       # ignored elsewhere. The schema bundle verification is in ALL, so this also
       # fails the release when `schemas/` does not match `MANIFEST.json`
       # (requirement 20.3).
+      #
+      # `--parallel 4` carries a number for the same reason as the matching step
+      # in `ci.yml`: a bare `--parallel` becomes `make -j` with no limit, which
+      # starts all ~280 of libcef_dll_wrapper's translation units at once and
+      # exhausts a runner's memory rather than its cores. Every release leg builds
+      # CEF, so this one has no configuration where the unbounded form is safe.
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel 4
 
       # The suite the release is allowed to ship on. Same gate as CI, run again
       # here rather than trusted from the commit's CI run, because the release

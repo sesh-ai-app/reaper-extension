@@ -214,6 +214,14 @@ jobs:
     needs: [ui]
     runs-on: ${{ matrix.os }}
 
+    # Well above the slowest honest run — a cold CEF leg downloads hundreds of
+    # megabytes, builds the wrapper from source, and builds three vcpkg ports —
+    # and well under the six-hour default, which is long enough that a wedged leg
+    # burns an afternoon of runner time before anyone notices. The number is a
+    # circuit breaker, not a budget: if a leg ever gets close, the fix is to find
+    # out why rather than to raise it.
+    timeout-minutes: 90
+
     strategy:
       # Each leg's result is information the others do not carry. Cancelling the
       # Windows build because macOS failed throws that away.
@@ -275,6 +283,25 @@ jobs:
         #     without a commit.
         # -------------------------------------------------------------------
         os: [ubuntu-22.04, macos-15, macos-15-intel, windows-2025]
+
+        # Four CEF-less legs is three more than this needs, and the trim is
+        # deferred rather than overlooked.
+        #
+        # The two configurations differ by exactly two flags, so a CEF leg
+        # compiles a strict superset of these sources and runs the same suite.
+        # The only thing a CEF-less leg covers that nothing else does is the
+        # `if(NOT SESH_AI_CEF_FOUND)` branch in CMakeLists.txt — the source
+        # removal and the `panel_browser_creator_without_cef.cpp` swap — and that
+        # branch is platform-independent, so one leg proves it.
+        #
+        # It does need that one leg. A development machine has no vcpkg, so the
+        # shared library target is never created there and only `sesh_ai_tests`
+        # builds: `panel_browser_creator_without_cef.cpp` has never been linked
+        # into a library anywhere but here.
+        #
+        # Kept at four until a CEF leg has gone green on all four platforms,
+        # because until then these are the only evidence the suite runs on
+        # Windows and macOS at all. After that, drop to `ubuntu-22.04` only.
         cef: [false, true]
 
     steps:
@@ -408,8 +435,22 @@ jobs:
       # Step 2, and step 4 a second time: `sesh_ai_verify_schema_bundle` is in ALL,
       # so this is the build step requirement 21.3 asks for, with the standalone job
       # above as the proof it needs nothing else to run.
+      # `--parallel 4` with a number, not a bare `--parallel`.
+      #
+      # Bare `--parallel` means "the build tool's default", and for the Makefile
+      # generators that is `make -j` with no limit — every translation unit whose
+      # dependencies are satisfied, started at once. That is survivable for this
+      # repository's own sources and not for libcef_dll_wrapper, which is around
+      # 280 units of template-heavy C++ with no ordering between them, on a runner
+      # with four cores and 16 GB.
+      #
+      # The number is a memory limit rather than a CPU one. Four concurrent CEF
+      # compilations is a few gigabytes; 280 is not available on any runner image,
+      # and the two failure modes are different enough to be hard to recognise —
+      # Linux exhausts memory and the job dies, macOS thrashes swap and merely
+      # takes hours.
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel 4
 
       # Step 3. `--no-tests=error` matters more than it looks: the test target is
       # skipped when Catch2 is unavailable, and without this flag that situation is

@@ -594,10 +594,65 @@ if(SESH_AI_CEF_LOCATED_ROOT)
 
 	find_package(CEF REQUIRED)
 
+	# Undo CEF's deployment target, which it sets without asking.
+	#
+	# cef_variables.cmake — included by the find_package above, into this scope —
+	# ends its macOS section with:
+	#
+	#   set(CEF_TARGET_SDK               "12.0")
+	#   set(CMAKE_OSX_DEPLOYMENT_TARGET  ${CEF_TARGET_SDK})
+	#
+	# A plain set(), so it shadows the cache entry this file established before
+	# project() for the remainder of this directory scope and every subdirectory
+	# added after it: the wrapper below, the library, and tests/. The vcpkg ports
+	# are unaffected because they ran earlier, through MACOSX_DEPLOYMENT_TARGET.
+	# The result is a 13.0 dependency graph linked into a 12.0 binary, which the
+	# linker reports roughly a hundred times:
+	#
+	#   ld: warning: object file (libCatch2.a(...)) was built for newer 'macOS'
+	#   version (13.0) than being linked (12.0)
+	#
+	# That 12.0 is upstream lag rather than a claim about what CEF 154 supports.
+	# Chromium 151 dropped macOS 12 Monterey, four milestones before the pinned
+	# build, and CEF has since moved both of those lines to "13.0" and dropped
+	# 12.0 from its SDK search list. The pin predates the correction.
+	#
+	# So this restores the floor rather than negotiating with it — ADR 0023 fixes
+	# macOS 13 for both architectures, and a dependency compiled for 13.0 is
+	# correct. Only the variable needs restoring: CEF also appends
+	# -mmacosx-version-min=${CEF_TARGET_SDK} to CEF_COMPILER_FLAGS, but nothing
+	# here consumes CEF's flag lists, so that copy never reaches a command line.
+	# It would if this file ever started using them, and then this would not be
+	# enough.
+	# $CACHE{} rather than a saved copy of the value: it reads the cache entry
+	# established above, which is the one place the floor is written, and is
+	# exactly the read a shadowing normal variable cannot affect. A -D on the
+	# command line goes into the cache too, so an override still survives this.
+	if(SESH_AI_PLATFORM_MACOS)
+		set(CMAKE_OSX_DEPLOYMENT_TARGET "$CACHE{CMAKE_OSX_DEPLOYMENT_TARGET}")
+	endif()
+
 	# The wrapper is distributed as source and has to be compiled with the same
 	# settings as the code that consumes it, so it is built here rather than
 	# linked from a prebuilt archive.
 	add_subdirectory("${CEF_LIBCEF_DLL_WRAPPER_PATH}" libcef_dll_wrapper)
+
+	# Deliberately not setting the wrapper's C++ standard here, though CEF 154's
+	# headers do require C++20 — include/base/cef_scoped_refptr.h alone uses
+	# std::same_as, std::derived_from, and a requires-clause over
+	# std::convertible_to.
+	#
+	# The wrapper already gets it, from CEF rather than from this file. Its
+	# libcef_dll/CMakeLists.txt calls SET_LIBRARY_TARGET_PROPERTIES, which reaches
+	# SET_COMMON_TARGET_PROPERTIES and applies CEF_CXX_COMPILER_FLAGS — containing
+	# -std=c++20, or /std:c++20 on MSVC — as a target_compile_options on the
+	# wrapper. So it compiles at C++20 whatever CMAKE_CXX_STANDARD says here, and
+	# a CXX_STANDARD 20 on this target would be a second way of saying it that
+	# could later disagree with CEF's own number.
+	#
+	# Worth writing down because the asymmetry looks like an oversight: the
+	# extension target below *does* need it set explicitly. Nothing in this file
+	# consumes CEF's flag lists, so our own translation units never see them.
 
 	# The runtime artifact differs per platform, and so does what packaging has to
 	# do with it. Recording it once keeps the packaging and UI host work from
@@ -1117,6 +1172,23 @@ else()
 	# first thing that will exercise any of it.
 	if(SESH_AI_CEF_FOUND)
 		target_include_directories(sesh_ai_extension SYSTEM PRIVATE "${CEF_INCLUDE_PATH}")
+
+		# C++20 for the same reason the wrapper needs it — CEF 154's headers use
+		# concepts — and only on the CEF branch, because this is the only branch
+		# where a translation unit in this target includes them. A CEF-less build
+		# stays on the project's C++17.
+		#
+		# This raises all of SESH_AI_SOURCES, not just the two CEF translation
+		# units, because the standard is a target property and CMake has no
+		# per-source equivalent. Splitting the CEF pair into an object library to
+		# narrow it would buy a guarantee this project does not need: the sources
+		# are written to C++17 and compiling them as C++20 does not license them
+		# to drift, which the CEF-less legs then prove on every run.
+		set_target_properties(sesh_ai_extension PROPERTIES
+			CXX_STANDARD 20
+			CXX_STANDARD_REQUIRED ON
+			CXX_EXTENSIONS OFF
+		)
 
 		target_link_libraries(sesh_ai_extension PRIVATE libcef_dll_wrapper)
 
