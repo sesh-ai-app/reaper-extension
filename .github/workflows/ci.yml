@@ -428,6 +428,23 @@ jobs:
               -DSESH_AI_DOWNLOAD_CEF=ON
               -DSESH_AI_REQUIRE_CEF=ON
             )
+
+            # One CRT in play, or the link fails with LNK2038.
+            #
+            # CEF defaults CEF_RUNTIME_LIBRARY_FLAG to /MT, the static CRT, and
+            # applies it to libcef_dll_wrapper. Everything else on this leg is on
+            # the dynamic CRT: no triplet is passed, so vcpkg resolves the default
+            # x64-windows and builds DLLs. Mixing the two is a hard link error, not
+            # a warning.
+            #
+            # `release.yml` already passes this, alongside the
+            # x64-windows-static-md triplet it needs so json-schema-validator is
+            # not a DLL shipped beside the extension. The triplet is not copied
+            # here, because what CI needs is one consistent CRT rather than the
+            # release's packaging shape, and the default triplet already gives /MD.
+            if [ "${RUNNER_OS}" = "Windows" ]; then
+              configure_arguments+=(-DCEF_RUNTIME_LIBRARY_FLAG=/MD)
+            fi
           fi
 
           cmake "${configure_arguments[@]}"

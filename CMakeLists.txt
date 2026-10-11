@@ -256,12 +256,43 @@ endif()
 add_library(sesh_ai_platform_floor INTERFACE)
 
 if(WIN32)
-	# Stated before any system header is included, which is what makes it bind:
-	# sdkddkver.h picks a default only when _WIN32_WINNT is undefined, so setting
-	# it here means an API newer than Windows 10 is a compile error rather than a
-	# binary that loads on the build machine and not on a producer's.
+	# Both of these have to be in force before any system header is read, which is
+	# what makes a compile definition the right instrument and a #define in one of
+	# our headers the wrong one. <windows.h> is reached from three independent
+	# directions here — CEF's own headers on the way to cef_types_wrappers.h,
+	# reaper_plugin.h, and a handful of direct includes — so no header we own is
+	# reliably first.
+	#
+	# _WIN32_WINNT is the floor: sdkddkver.h picks a default only when it is
+	# undefined, so setting it means an API newer than Windows 10 is a compile
+	# error rather than a binary that loads on the build machine and not on a
+	# producer's.
+	#
+	# NOMINMAX is not a floor, and is here because this is the one place that
+	# runs before the system headers. Without it <windows.h> defines min and max
+	# as function-like macros, and CEF does not defend every use against them:
+	#
+	#   template <class struct_type>
+	#   class CefStructBaseSimple : public struct_type {
+	#     CefStructBaseSimple& operator=(const struct_type& r) {
+	#       memcpy(static_cast<struct_type*>(this), &r,
+	#              std::min(r.size, sizeof(struct_type)));
+	#
+	# `std::min(...)` there is unparenthesised, so the macro expands after the
+	# `::` and MSVC reports `C2589: '(': illegal token on right side of '::'`
+	# inside CEF's header while compiling src/ui/cef_browser_host.cpp. CEF writes
+	# `(std::numeric_limits<uint32_t>::max)()` with the defensive parentheses a few
+	# lines away, so this is an inconsistency upstream rather than a rule we broke.
+	#
+	# CEF avoids it on its own targets by putting NOMINMAX in CEF_COMPILER_DEFINES,
+	# which `SET_COMMON_TARGET_PROPERTIES` applies to the wrapper and which nothing
+	# in this file consumes — the same gap that left our target at C++17 while the
+	# wrapper compiled at C++20. CEF pairs it with WIN32_LEAN_AND_MEAN, deliberately
+	# not copied here: it removes declarations rather than adding them, including
+	# the old winsock, and no local build can currently prove what that breaks.
 	target_compile_definitions(sesh_ai_platform_floor INTERFACE
 		_WIN32_WINNT=${SESH_AI_WINDOWS_NT_FLOOR}
+		NOMINMAX
 	)
 endif()
 
