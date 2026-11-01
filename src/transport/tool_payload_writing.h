@@ -201,8 +201,12 @@ namespace sesh_ai::transport {
 	template <typename JsonValue>
 	class ToolOutputWriter {
 	public:
+		// Parentheses, not the braces used everywhere else. nlohmann::json brace-initialised
+		// from another json is compiler-dependent: Clang copies the object, GCC builds the
+		// array `[{}]`, and every `set_*` below then throws. See "Brace initialization
+		// yields arrays" in the library's FAQ.
 		ToolOutputWriter()
-			: document_{JsonValue::object()}
+			: document_(JsonValue::object())
 		{
 		}
 

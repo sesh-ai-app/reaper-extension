@@ -1507,6 +1507,31 @@ TEST_CASE("the outbound tool writers need the schema validator")
 // The parts that need no validator
 // ---------------------------------------------------------------------------
 
+TEST_CASE("a fresh output writer starts from an object rather than an array holding one")
+{
+	// A regression guard that passes on Clang whichever way `ToolOutputWriter`'s
+	// constructor is spelled. It exists to fail on GCC (and, we expect, MSVC) if the
+	// initialiser goes back to braces: there `document_{JsonValue::object()}` builds `[{}]`
+	// instead of `{}`, and every field written after that throws. Twelve test cases failed
+	// on GCC for that reason, each a long way from the one line responsible, so this one
+	// names the line.
+	sesh_ai::transport::ToolOutputWriter<Json> empty_writer;
+
+	const Json empty_document = empty_writer.release();
+
+	CHECK(empty_document.is_object());
+	CHECK(empty_document.empty());
+
+	sesh_ai::transport::ToolOutputWriter<Json> one_field_writer;
+	one_field_writer.set_integer("index", 3);
+
+	const Json one_field_document = one_field_writer.release();
+
+	REQUIRE(one_field_document.is_object());
+	CHECK(one_field_document.size() == 1);
+	CHECK(one_field_document.at("index").get<int>() == 3);
+}
+
 TEST_CASE("an unknown tool names the tool and answers to no schema")
 {
 	// Requirement 23.6. Not a tool result — there is no tool, so there are no
