@@ -66,6 +66,23 @@
 # `dependencies` itself, and adds a per-ecosystem label when more than one
 # ecosystem is configured, which is the case here.
 
+# ---------------------------------------------------------------------------
+# Version updates are switched off, and security updates are not
+#
+# Every entry below sets `open-pull-requests-limit: 0`. GitHub documents that
+# value as stopping routine version-update pull requests while leaving
+# security-update pull requests alone, so a vulnerable dependency with a fixed
+# release still gets one.
+#
+# Switched off because the bot's pull requests arrived while the extension was
+# mid-development and competed with it for review. Upgrades are made
+# deliberately in a working session instead, which is also where the vcpkg
+# caveat above gets honoured: the baseline and its `overrides` move together.
+#
+# The schedules and groups are kept so that turning version updates back on is
+# a one-line change per entry. Requirement 21.7 asks for Dependabot to be
+# enabled; this file is what enables it, and it still does.
+
 version: 2
 
 updates:
@@ -81,7 +98,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0
     groups:
       github-actions:
         patterns:
@@ -100,7 +117,7 @@ updates:
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     versioning-strategy: increase
     groups:
       ui-minor-and-patch:
@@ -125,6 +142,6 @@ updates:
     directory: "/"
     schedule:
       interval: monthly
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 0
     commit-message:
       prefix: chore
