@@ -350,7 +350,11 @@ namespace sesh_ai::transport {
 		)
 			: type_{build_envelope_type(tool_name)},
 			request_id_{answered_call.request_id},
-			payload_{std::move(payload)},
+			// Parentheses, not braces: when `PayloadType` is nlohmann::json, brace-
+			// initialising it from another json is compiler-dependent, and GCC wraps the
+			// payload in a one-element array. See "Brace initialization yields arrays" in
+			// the library's FAQ.
+			payload_(std::move(payload)),
 			result_schema_path_{result_schema_path}
 		{
 		}

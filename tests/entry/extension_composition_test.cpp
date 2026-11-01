@@ -413,7 +413,7 @@ TEST_CASE("the bridge's inbound half answers where it should", "[composition][br
 		// does not look.
 		REQUIRE(composed.send_from_javascript(
 			"state:prompt",
-			"{\"promptText\":\"add a compressor to the kick\"}"
+			"{\"promptText\":\"add a compressor to the kick\",\"locale\":\"en\"}"
 		));
 
 		const std::vector<CompositionOutboundEnvelope> queued = composed.drain_outbound();
@@ -470,6 +470,51 @@ TEST_CASE("the bridge's inbound half answers where it should", "[composition][br
 	{
 		REQUIRE_FALSE(composed.send_from_javascript("state:something_the_ui_invented", "{}"));
 		REQUIRE(composed.drain_outbound().empty());
+	}
+
+	SECTION("a decision that contradicts the name it arrived under never reaches the coordinator")
+	{
+		// Task 24.3's reader, through the real graph. `confirm-decision.schema.json`
+		// settles this: a client that disagreed with itself is refused rather than
+		// resolved by precedence, because neither reading is safe to guess at for an
+		// operation the producer was asked about. The prompt is live, so the coordinator
+		// *would* have answered — which is what makes the refusal the reader's and not
+		// the coordinator's.
+		route(a_confirmation_request("confirm-1"));
+
+		REQUIRE_FALSE(composed.send_from_javascript(
+			"confirm:approve",
+			"{\"requestId\":\"confirm-1\",\"decision\":\"rejected\"}"
+		));
+
+		REQUIRE(composed.drain_outbound().empty());
+		REQUIRE_FALSE(composed.graph().dispatcher_sink().last_decision_outcome().has_value());
+
+		REQUIRE(composed.graph().dispatcher_sink().last_message_problem()
+			== sesh_ai::ui::InboundBridgeMessageProblem::decision_disagrees_with_message_name);
+
+		// And the prompt is still live, so the producer can answer it again — a
+		// contradicting message must not consume the confirmation it misnamed.
+		REQUIRE(composed.send_from_javascript(
+			"confirm:approve",
+			"{\"requestId\":\"confirm-1\",\"decision\":\"approved\"}"
+		));
+	}
+
+	SECTION("a prompt missing a property its schema requires is refused at the bridge")
+	{
+		// `state-prompt.schema.json` requires `promptText` and `locale`. Refused here
+		// rather than queued, because the only remaining check is the Envelope Codec's
+		// on the network thread — and a prompt refused there is one the producer watched
+		// disappear.
+		REQUIRE_FALSE(composed.send_from_javascript(
+			"state:prompt",
+			"{\"promptText\":\"add a compressor to the kick\"}"
+		));
+
+		REQUIRE(composed.drain_outbound().empty());
+		REQUIRE(composed.graph().dispatcher_sink().last_message_problem()
+			== sesh_ai::ui::InboundBridgeMessageProblem::required_field_unreadable);
 	}
 }
 

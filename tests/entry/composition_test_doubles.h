@@ -1007,8 +1007,7 @@ namespace sesh_ai_tests
 				[this] { ++ui_state_publication_requests_; },
 				tool_call_codec(),
 				stub_tool_payload_codecs(gaps),
-				parse_bridge_payload(),
-				read_bridge_request_identifier(),
+				read_bridge_message(),
 				[](const StubJson&) { return std::string{"{\"fileName\":\"generated.lua\"}"}; }
 			};
 
@@ -1101,45 +1100,81 @@ namespace sesh_ai_tests
 			return codec;
 		}
 
-		static Graph::Sink::PayloadParser parse_bridge_payload()
+		// The real reader over a hand-rolled text-to-document step.
+		//
+		// `ui::read_inbound_bridge_message` is not substituted here — it is library-free
+		// and `tests/ui/bridge_parsing_test.cpp` drives it against nlohmann/json — so
+		// what this supplies is only the one call the parser deliberately leaves to its
+		// caller. A real JSON parser is `extension_composition.cpp`'s to supply; this is
+		// enough of one for the three messages the UI originates, all of which are flat
+		// objects of string-valued properties.
+		static Graph::Sink::MessageReader read_bridge_message()
 		{
-			// Enough of a parser for the three messages the UI originates, which carry
-			// a `requestId` and a `promptText` and nothing structured. A real JSON
-			// library is `extension_composition.cpp`'s to supply.
-			return [](const std::string& serialized_json) -> std::optional<StubJson> {
-				if (serialized_json.empty() || serialized_json.front() != '{')
-				{
-					return std::nullopt;
-				}
-
-				StubJson document = StubJson::object();
-
-				const std::size_t identifier_at = serialized_json.find("\"requestId\":\"");
-
-				if (identifier_at != std::string::npos) {
-					const std::size_t value_at =
-						identifier_at + std::string_view{"\"requestId\":\""}.size();
-					const std::size_t value_ends = serialized_json.find('"', value_at);
-
-					document["requestId"] = StubJson::string_value(
-						serialized_json.substr(value_at, value_ends - value_at)
-					);
-				}
-
-				return document;
+			return [](std::string_view message_name, const std::string& serialized_json) {
+				return sesh_ai::ui::read_inbound_bridge_message<StubJson>(
+					message_name,
+					parse_flat_string_object(serialized_json)
+				);
 			};
 		}
 
-		static Graph::Sink::RequestIdentifierReader read_bridge_request_identifier()
+		// The flat object the three inbound payloads are, read out of its text.
+		//
+		// Every property across the two schemas is a string, and both schemas put
+		// `additionalProperties: false` on the object — so a reader that handles
+		// `"name":"value"` pairs and nothing else handles all of them. Anything that is
+		// not an object at all comes back empty, which is what the parser reads as "not a
+		// JSON document".
+		static std::optional<StubJson> parse_flat_string_object(const std::string& serialized_json)
 		{
-			return [](const StubJson& payload) -> std::string {
-				if (!payload.is_object() || !payload.contains("requestId"))
+			if (serialized_json.empty() || serialized_json.front() != '{')
+			{
+				return std::nullopt;
+			}
+
+			StubJson document = StubJson::object();
+
+			std::size_t position = 1;
+
+			while (true)
+			{
+				const std::size_t name_opens = serialized_json.find('"', position);
+
+				if (name_opens == std::string::npos)
 				{
-					return {};
+					break;
 				}
 
-				return payload.at("requestId").get<std::string>();
-			};
+				const std::size_t name_closes = serialized_json.find('"', name_opens + 1);
+
+				if (name_closes == std::string::npos)
+				{
+					break;
+				}
+
+				const std::size_t value_opens = serialized_json.find('"', name_closes + 1);
+
+				if (value_opens == std::string::npos)
+				{
+					break;
+				}
+
+				const std::size_t value_closes = serialized_json.find('"', value_opens + 1);
+
+				if (value_closes == std::string::npos)
+				{
+					break;
+				}
+
+				document[serialized_json.substr(name_opens + 1, name_closes - name_opens - 1)] =
+					StubJson::string_value(
+						serialized_json.substr(value_opens + 1, value_closes - value_opens - 1)
+					);
+
+				position = value_closes + 1;
+			}
+
+			return document;
 		}
 
 		sesh_ai::entry::ToolHostReferences tool_host_references()

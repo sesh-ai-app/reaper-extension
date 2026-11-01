@@ -98,6 +98,7 @@
 #include <daw/tools/undo_tools.h>
 #include <daw/undo_manager.h>
 #include <transport/message_dispatcher.h>
+#include <ui/bridge_parsing.h>
 #include <ui/bridge_publishers.h>
 #include <ui/deferred_browser_host.h>
 #include <ui/ui_host.h>
@@ -855,26 +856,34 @@ namespace sesh_ai::entry {
 	public:
 		using OutboundQueue = transport::ConcurrentQueue<OutboundEnvelopeType>;
 
-		// Parsing is a seam for the usual reason: the bridge carries text, the outbound
-		// queue carries a parsed payload, and a JSON library is what sits between them.
-		// Empty is "this was not a JSON document", which is refused rather than queued.
-		using PayloadParser = std::function<std::optional<JsonValue>(const std::string&)>;
-
-		// The `requestId` out of a parsed `confirm-decision` payload. Empty when the
-		// payload carried none, which the coordinator then refuses as untracked —
-		// `confirm-decision.schema.json` requires one, so an empty answer means the
-		// payload would not have been sendable either.
-		using RequestIdentifierReader = std::function<std::string(const JsonValue&)>;
+		// Reading one message from the renderer is a seam for the usual reason: the
+		// bridge carries text, the outbound queue carries a parsed payload, and a JSON
+		// library is what sits between them.
+		//
+		// One seam rather than the two this took before task 24.3 — a parser and a
+		// separate `requestId` reader. The parse and the identifier were never
+		// independent: `ui/bridge_parsing.h` has to read the identifier anyway in order
+		// to refuse a decision that names no prompt, so asking for it a second time
+		// afterwards was a second place to decide what counts as absent. The reader also
+		// takes the message name, which the old parser did not get and which is what the
+		// per-message decisions need — `state:prompt` and `confirm-decision` require
+		// different properties, and a `confirm:approve` carrying `decision: "rejected"`
+		// is only refusable by something that knows both halves.
+		//
+		// `InboundBridgeMessageRead::readable()` is false for every refusal and the
+		// problem says which. See `ui/bridge_parsing.h` for what each one means.
+		using MessageReader = std::function<ui::InboundBridgeMessageRead<JsonValue>(
+			std::string_view message_name,
+			const std::string& serialized_json
+		)>;
 
 		BridgeMessageDispatcherSink(
 			transport::ConfirmationCoordinator<OutboundEnvelopeType>& confirmation_coordinator,
 			OutboundQueue& outbound_queue,
-			PayloadParser parse_payload,
-			RequestIdentifierReader read_request_identifier)
+			MessageReader read_message)
 			: confirmation_coordinator_{confirmation_coordinator},
 			outbound_queue_{outbound_queue},
-			parse_payload_{std::move(parse_payload)},
-			read_request_identifier_{std::move(read_request_identifier)}
+			read_message_{std::move(read_message)}
 		{
 		}
 
@@ -885,47 +894,39 @@ namespace sesh_ai::entry {
 
 		bool accept_message_from_javascript(const ui::BridgeMessage& message) override
 		{
-			if (!parse_payload_ || !read_request_identifier_) {
+			if (!read_message_) {
 				++unparseable_message_count_;
 				return false;
 			}
 
 			const std::string& message_name = message.message_name();
 
-			// Only the three the UI originates. A `view:` name arriving from JavaScript
-			// is the bridge pointed the wrong way round and is refused on the strength
-			// of the direction `ui_host.h` declares, not on a guess.
-			if (ui::bridge_message_direction_for(message_name)
-				!= ui::BridgeMessageDirection::from_javascript) {
-				++refused_message_count_;
-				return false;
-			}
+			ui::InboundBridgeMessageRead<JsonValue> read =
+				read_message_(message_name, message.payload().serialized_json());
 
-			std::optional<JsonValue> payload =
-				parse_payload_(message.payload().serialized_json());
+			last_message_problem_ = read.problem;
 
-			if (!payload.has_value()) {
-				++unparseable_message_count_;
+			if (!read.readable()) {
+				tally_refusal(read.problem);
 				return false;
 			}
 
 			if (message_name == ui::producer_prompt_bridge_message_name) {
-				return queue_outbound(message_name, std::move(*payload));
+				return queue_outbound(message_name, std::move(*read.payload));
 			}
 
 			// The two decisions. `decision` must agree with the name, which is the rule
 			// the server applies to the envelope too — so the verdict is taken from the
 			// name rather than from the payload's field, and the payload's own field is
-			// the UI's copy of the same answer.
+			// the UI's copy of the same answer. That the two agree is the reader's
+			// check; a disagreement never reaches here.
 			const transport::ProducerVerdict verdict =
 				message_name == ui::confirmation_approval_bridge_message_name
 					? transport::ProducerVerdict::approved
 					: transport::ProducerVerdict::rejected;
 
-			const std::string request_identifier = read_request_identifier_(*payload);
-
 			const transport::ConfirmationDecisionOutcome outcome =
-				confirmation_coordinator_.answer(request_identifier, verdict);
+				confirmation_coordinator_.answer(read.request_identifier, verdict);
 
 			last_decision_outcome_ = outcome;
 
@@ -949,7 +950,36 @@ namespace sesh_ai::entry {
 			return last_decision_outcome_;
 		}
 
+		// Why the most recent message was not accepted, for the log line. Empty before
+		// the first message; `none` after one that was accepted.
+		const std::optional<ui::InboundBridgeMessageProblem>& last_message_problem() const
+		{
+			return last_message_problem_;
+		}
+
 	private:
+		// The two counters split the seven problems the way a reader of them would want
+		// them split: a contract drift on one side, a payload the renderer built wrong
+		// on the other. Both were already here before the reader reported a reason, and
+		// keeping them means the distinction survives in a build that logs neither.
+		void tally_refusal(ui::InboundBridgeMessageProblem problem)
+		{
+			switch (problem) {
+			case ui::InboundBridgeMessageProblem::undeclared_message_name:
+			case ui::InboundBridgeMessageProblem::wrong_direction:
+				++refused_message_count_;
+				return;
+			case ui::InboundBridgeMessageProblem::none:
+			case ui::InboundBridgeMessageProblem::not_a_json_document:
+			case ui::InboundBridgeMessageProblem::not_a_json_object:
+			case ui::InboundBridgeMessageProblem::required_field_unreadable:
+			case ui::InboundBridgeMessageProblem::decision_disagrees_with_message_name:
+				break;
+			}
+
+			++unparseable_message_count_;
+		}
+
 		bool queue_outbound(const std::string& envelope_type, JsonValue payload)
 		{
 			OutboundEnvelopeType outbound_envelope;
@@ -969,13 +999,13 @@ namespace sesh_ai::entry {
 
 		transport::ConfirmationCoordinator<OutboundEnvelopeType>& confirmation_coordinator_;
 		OutboundQueue& outbound_queue_;
-		PayloadParser parse_payload_;
-		RequestIdentifierReader read_request_identifier_;
+		MessageReader read_message_;
 
 		std::size_t queued_message_count_ = 0;
 		std::size_t refused_message_count_ = 0;
 		std::size_t unparseable_message_count_ = 0;
 
+		std::optional<ui::InboundBridgeMessageProblem> last_message_problem_;
 		std::optional<transport::ConfirmationDecisionOutcome> last_decision_outcome_;
 	};
 
@@ -1037,8 +1067,7 @@ namespace sesh_ai::entry {
 			// them in with nlohmann and the suite with stubs.
 			ToolCallCodec tool_call_codec;
 			ToolPayloadCodecs<JsonValue> tool_payload_codecs;
-			typename Sink::PayloadParser parse_bridge_payload;
-			typename Sink::RequestIdentifierReader read_bridge_request_identifier;
+			typename Sink::MessageReader read_bridge_message;
 			typename UiHostScriptDownloadRouter<InboundEnvelopeType, JsonValue>::PayloadSerialiser
 				serialise_script_download_payload;
 		};
@@ -1056,8 +1085,7 @@ namespace sesh_ai::entry {
 			dispatcher_sink_{
 				confirmation_coordinator_,
 				dependencies.outbound_queue,
-				std::move(dependencies.parse_bridge_payload),
-				std::move(dependencies.read_bridge_request_identifier)
+				std::move(dependencies.read_bridge_message)
 			},
 			ui_host_{deferred_browser_host_, dispatcher_sink_},
 			confirmation_presenter_{ui_host_},

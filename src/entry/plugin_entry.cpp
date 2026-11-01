@@ -23,50 +23,39 @@
 // can report rather than a null call inside a producer's session.
 //
 // ---------------------------------------------------------------------------
-// What is not here yet, named so it is not mistaken for done
+// What is wired, and what is not
 //
-// Three pieces of requirements 1.1, 1.3, and 2.4 are still open, and the three are at
-// different distances from done. Task 22.1 built the composition root
-// (`entry/extension_composition.h`), so the shape of what is missing has changed since
-// this comment was first written — what remains is one body of work, not three.
+// Task 24.3 filled the router slot. `compose_extension`
+// (`entry/composed_extension.h`, defined in `entry/extension_composition.cpp`) builds
+// the whole object graph against nlohmann/json and the nine REAPER-backed adapters, and
+// `bind_envelope_router` binds its Message Dispatcher into the slot below — which, until
+// that landed, was a default-constructed router that the Main-Thread Dispatcher read as
+// "nothing routes yet". So an inbound envelope now reaches one of seven destinations,
+// all 42 tools are registered, and `load` writes the line that says how many.
 //
-//   - **The panel window itself.** Unchanged, and deliberately out of 22.1's scope.
-//     `DockWindowAddEx` takes an `HWND`, and producing one needs a dialog resource plus
-//     the SWELL resource-generation step on macOS and Linux — a `CMakeLists.txt` change
-//     and packaging work (task 21.x). So the panel registration is taken by
-//     `register_panel_window`, which the window creation calls once it exists. The
-//     registrar's half of it is complete and symmetric; the window is not.
+// Two pieces of requirements 1.1 and 1.3 are still open, and both are about the window
+// rather than the graph:
 //
-//   - **The CEF-backed browser.** The seam is now filled in the right place.
-//     `entry/panel_browser_creator.h` declares `make_panel_browser_creator`, and
-//     `entry/cef_panel_browser_creator.cpp` — compiled only when a CEF distribution was
-//     located, exactly as `src/ui/cef_browser_host.cpp` is — is the one translation
-//     unit outside that file which names `CefPanelBrowserHost`. It is still not called
-//     from here, because it takes a `ui::UiHost&` and a `ui::DeferredBrowserHost&`, both
-//     of which are members of the composed graph; calling it means constructing the
-//     graph, which is the third item.
+//   - **The panel window itself.** `DockWindowAddEx` takes an `HWND`, and producing one
+//     needs a dialog resource plus the SWELL resource-generation step on macOS and Linux
+//     — a `CMakeLists.txt` change and packaging work, which is task 25.1. So the panel
+//     registration is taken by `register_panel_window`, which the window creation calls
+//     once it exists. The registrar's half of it is complete and symmetric; the window
+//     is not.
 //
-//   - **The graph, bound to nlohmann/json and the REAPER C API.**
-//     `ExtensionObjectGraph` wires all seven of the Message Dispatcher's destinations,
-//     composes the Tool Executor's registry over the nine REAPER-backed adapters, and
-//     hands back both the Message Dispatcher for `bind_envelope_router` and the publish
-//     step for the UI state slot. The suite drives the whole of it against stubs in
-//     `tests/entry/extension_composition_test.cpp`, including all 42 tools registering
-//     and an envelope routed through the bound router reaching its destination.
+//   - **The CEF-backed browser.** `entry/panel_browser_creator.h` declares
+//     `make_panel_browser_creator`, and `entry/cef_panel_browser_creator.cpp` —
+//     compiled only when a CEF distribution was located, exactly as
+//     `src/ui/cef_browser_host.cpp` is — is the one translation unit outside that file
+//     which names `CefPanelBrowserHost`. Both references it takes are now reachable, on
+//     `ComposedExtension`. What it still needs is the panel's `HWND` and the resolved
+//     asset directory, which arrive with the window above: task 25.2.
 //
-//     What it has to be *given* is the JSON half: a reader and a writer per tool across
-//     the 42 (the per-family `*_payload_codec` structs under `src/daw/tools/`), a
-//     `read_tool_call` and a `write_dispatch_outcome` for the executor seam, and a
-//     payload parser for the bridge. None of those exists yet, and none of them is
-//     written here: they are nlohmann/json code, and
-//     `ToolRegistryCompositionReport::unregistered_constrained_tool_names` is what
-//     reports the gap at load rather than one unknown-tool error at a time.
-//
-// None of the three is faked. `open_panel` reports `no_browser_creator`, the panel
-// registration is simply not taken, and the router slot is empty — which the
-// Main-Thread Dispatcher reads as "nothing routes yet" and answers by leaving the
-// inbound queue alone. All three are what the log says, rather than something that
-// claims to have happened.
+// Neither is faked. `open_panel` reports `no_browser_creator` and the panel registration
+// is simply not taken, which is what the log says rather than something claiming to have
+// happened. The UI state publish step *is* wired, and publishes through the
+// `DeferredBrowserHost` — which reports that it has no browser rather than losing the
+// state, so the presenters' accumulation is correct the moment there is one.
 
 #include <entry/plugin_entry.h>
 
@@ -77,6 +66,7 @@
 // there is nothing to eat. The same hazard is why nothing below this line calls either.
 // See `daw/tools/reaper_track_state_host.cpp`, where it was first hit, and
 // `reaper_sdk.h`, which is the only route to the SDK in this tree.
+#include <entry/composed_extension.h>
 #include <entry/extension_log.h>
 #include <entry/main_thread_dispatcher.h>
 #include <entry/reaper_timer_registrar.h>
@@ -383,39 +373,66 @@ namespace {
 			timer_registration_{timer_registrar_},
 			entry_{registrations_, build_startup_plan(), build_teardown_steps()}
 		{
+			// The graph, before the dispatcher that routes into it.
+			//
+			// `request_ui_state_publication` is the one edge that runs the other way:
+			// the Transport Client presents a connection status from the network thread
+			// and the publish has to reach the tick (requirement 2.3). The dispatcher
+			// does not exist yet, so the callable finds it through this object the same
+			// way the tick does — and `request_ui_state_publication` is documented safe
+			// from any thread, which is the property that makes a lambda here correct
+			// rather than convenient.
+			composed_ = sesh_ai::entry::compose_extension(
+				sesh_ai::entry::ComposedExtensionDependencies{
+					plugin_info,
+					&queues_->outbound(),
+					[this] {
+						if (dispatcher_ != nullptr) {
+							dispatcher_->request_ui_state_publication();
+						}
+					}
+				}
+			);
+
 			dispatcher_ = std::make_unique<Dispatcher>(
 				*queues_,
 
-				// The Message Dispatcher's slot (requirement 2.4). Still empty, which
-				// the Main-Thread Dispatcher reads as "nothing routes yet" and answers
-				// by leaving the inbound queue alone and reporting that work remains —
-				// envelopes wait rather than being drained into nowhere.
+				// The Message Dispatcher's slot (requirement 2.4), filled.
 				//
-				// The one call that fills it is
-				// `bind_envelope_router<InboundEnvelope>(graph.message_dispatcher(), log_)`.
-				// Both halves of that now exist and both are tested:
-				// `bind_envelope_router` against the real `transport::MessageDispatcher`
-				// in `tests/entry/extension_log_test.cpp`, and the graph — all seven
-				// destinations, the registry over the nine REAPER-backed adapters —
-				// against stubs in `tests/entry/extension_composition_test.cpp`.
+				// Task 24.3's deliverable. Before it, this was a default-constructed
+				// router that the Main-Thread Dispatcher read as "nothing routes yet"
+				// and answered by leaving the inbound queue alone — because the graph
+				// could be built but had nothing to give its Tool Executor, so all 42
+				// tools were unregistered and a filled slot would have been an extension
+				// that looked like it worked and refused everything.
 				//
-				// What is missing is the JSON half the graph has to be given: a reader
-				// and a writer per tool across the 42, the executor seam's
-				// `read_tool_call` and `write_dispatch_outcome`, and a payload parser
-				// for the bridge. See the file comment.
+				// `bind_envelope_router` is the adapter between the slot's
+				// `void(InboundEnvelope)` and the Message Dispatcher's `RoutingOutcome`,
+				// and it is also where requirement 5.8's line is written: an envelope
+				// type this build has no route for is logged once and ignored, because
+				// the server's protocol may be a version ahead.
 				//
-				// So the slot stays empty rather than being filled with a dispatcher
-				// whose Tool Executor answers "unknown tool" to all 42 tools. That would
-				// not be a partially wired extension, it would be a working-looking one
-				// that refuses everything.
-				Dispatcher::EnvelopeRouter{},
+				// An empty handle keeps the old behaviour rather than crashing on load,
+				// and `load` writes the line that says so.
+				composed_ == nullptr
+					? Dispatcher::EnvelopeRouter{}
+					: sesh_ai::entry::bind_envelope_router<sesh_ai::transport::InboundEnvelope>(
+						composed_->message_dispatcher(),
+						log_
+					),
 
 				// The handoff to the network thread, which arrives with the Transport
 				// Client.
 				Dispatcher::OutboundEnvelopeSender{},
 
-				// Publishing UI state to CEF, which arrives with the browser host.
-				Dispatcher::UiStatePublisher{}
+				// Publishing to CEF, inside the tick and nowhere else (requirement 2.3).
+				// A turn's forty stream deltas are one repaint because the presenters
+				// accumulate and this step takes — so it is wired now even though the
+				// browser is not, and publishes through the `DeferredBrowserHost`, which
+				// reports that it has no browser rather than dropping the state.
+				composed_ == nullptr
+					? Dispatcher::UiStatePublisher{}
+					: composed_->ui_state_publisher()
 			);
 		}
 
@@ -435,6 +452,8 @@ namespace {
 			for (const std::string& failure : report.failures) {
 				log_.write(LogSeverity::warning, failure);
 			}
+
+			write_tool_registry_lines();
 
 			return report;
 		}
@@ -503,6 +522,64 @@ namespace {
 		int show_panel_command_id() const { return show_panel_command_id_; }
 
 	private:
+		// What the Tool Executor's registry ended up holding, as one line at load.
+		//
+		// This is the line task 24 exists to make possible. The registry declines a name
+		// that is not one of the 42, a second handler for one tool, and an empty handler
+		// — and every `register_*_tools` declines an incomplete codec rather than
+		// registering a handler that would throw. All three of those produce the same
+		// symptom in a producer's session: the agent is told a tool it can see in its own
+		// tool list does not exist. Written here, the gap is a line at startup instead.
+		//
+		// A complete registry writes one informational line and nothing else, because
+		// "all 42 registered" is worth confirming once and is not worth a warning.
+		void write_tool_registry_lines()
+		{
+			if (composed_ == nullptr) {
+				log_.write(
+					LogSeverity::warning,
+					"the extension's object graph was not composed, so no tool is registered and "
+					"no envelope is routed"
+				);
+
+				return;
+			}
+
+			const sesh_ai::entry::ToolRegistryCompositionReport& report =
+				composed_->tool_registry_report();
+
+			std::string line{"registered "};
+			line.append(std::to_string(report.registered_tool_names.size()));
+			line.append(" tools");
+
+			if (report.every_constrained_tool_registered() && !report.anything_was_refused()) {
+				log_.write(LogSeverity::information, line);
+
+				return;
+			}
+
+			// The two halves are different failures and are named separately. A refusal
+			// is a name this composition offered and the registry would not take; a name
+			// left out is one nothing even offered, which is what an absent codec looks
+			// like.
+			for (const sesh_ai::entry::ToolRegistrationFailure& failure : report.failures) {
+				line.append("; refused ");
+				line.append(failure.tool_name);
+				line.append(" (");
+				line.append(
+					sesh_ai::daw::describe_tool_registration_outcome(failure.outcome)
+				);
+				line.append(")");
+			}
+
+			for (const std::string& tool_name : report.unregistered_constrained_tool_names) {
+				line.append("; unregistered ");
+				line.append(tool_name);
+			}
+
+			log_.write(LogSeverity::warning, line);
+		}
+
 		StartupPlan build_startup_plan()
 		{
 			StartupPlan plan;
@@ -562,12 +639,17 @@ namespace {
 				});
 			};
 
-			// `create_panel_browser` is left unset. The creator itself now exists —
-			// `make_panel_browser_creator`, behind `entry/panel_browser_creator.h`,
-			// defined in the one translation unit `CMakeLists.txt` lets need CEF — but
-			// it takes the UI Host and the deferred browser host out of the composed
-			// graph, so installing it here means constructing the graph. See the file
-			// comment.
+			// `create_panel_browser` is left unset, and what is missing has narrowed to
+			// one thing. `make_panel_browser_creator` — behind
+			// `entry/panel_browser_creator.h`, defined in the one translation unit
+			// `CMakeLists.txt` lets need CEF — takes the UI Host and the deferred
+			// browser host, and both are now reachable on `composed_`. What it also
+			// takes is `PanelBrowserSettings`: the directory Vite's output was installed
+			// into, and the CEF runtime layout. Resolving those needs REAPER's resource
+			// path and the window they are rendered into, which is task 25.2's.
+			//
+			// So `open_panel` reports `no_browser_creator`, which is the honest answer
+			// rather than a creator that would be handed a null window.
 
 			return plan;
 		}
@@ -585,17 +667,49 @@ namespace {
 			// Two. The dispatcher goes with the queues: it holds a reference to them and
 			// exists only to drain them, so leaving it behind would leave a reference to
 			// something destroyed.
+			//
+			// The graph is *not* destroyed here, and its outbound-queue reference is
+			// therefore dead from this point until step three. That is deliberate and it
+			// is the only arrangement requirement 1.2's order allows: CEF shuts down at
+			// step three through the UI Host, which is a member of the graph, so the
+			// graph has to outlive this step. Nothing reads the reference in between —
+			// the timer was unregistered at step one, so the tick that routes and the
+			// publish that pushes are both already gone, and `UiHost::shut_down` touches
+			// the browser and nothing else.
 			teardown.destroy_queues = [this] {
 				dispatcher_.reset();
 				queues_.reset();
 				return true;
 			};
 
-			// Three is the UI Host's, and four is the Transport Client's. Both are left
-			// unset, which `PluginEntry` records as a step with nothing to tear down
-			// rather than as a step that failed — the distinction matters, because a
-			// socket that refused to close must stop the teardown and a socket that does
-			// not exist must not.
+			// Three. The UI Host claims the step from the sequence itself, before it
+			// touches CEF, so an out-of-order teardown is refused while the browser is
+			// still alive rather than detected after REAPER has crashed.
+			//
+			// `already_shut_down` is reported rather than treated as a failure — an
+			// error path may have torn down before this ran — so the step succeeds for
+			// both of the outcomes in which CEF is, in fact, down.
+			teardown.shut_down_cef = [this](ShutdownSequence& sequence) {
+				if (composed_ == nullptr) {
+					// Nothing composed, so there is no UI Host and no browser. The step
+					// still has to be claimed, or the sequence refuses step four.
+					return sequence.record(sesh_ai::entry::ShutdownStep::shut_down_cef);
+				}
+
+				const sesh_ai::ui::ShutdownOutcome outcome =
+					composed_->ui_host().shut_down(sequence);
+
+				// After the UI Host's step, because this is what destroys the UI Host.
+				// Its queue reference has been dead since step two — see there.
+				composed_.reset();
+
+				return outcome.cef_shut_down || outcome.already_shut_down;
+			};
+
+			// Four is the Transport Client's, left unset — which `PluginEntry` records
+			// as a step with nothing to tear down rather than as a step that failed. The
+			// distinction matters: a socket that refused to close must stop the teardown
+			// and a socket that does not exist must not.
 
 			return teardown;
 		}
@@ -667,6 +781,14 @@ namespace {
 		// comment: reading it bottom-up gives the order the members are destroyed in,
 		// and that order is requirement 1.2's.
 		std::unique_ptr<Queues> queues_;
+
+		// Between the queues and the dispatcher, which is both constraints at once: the
+		// graph holds the outbound queue by reference, so the queues must be constructed
+		// first and destroyed last of the three; and the dispatcher's router is bound
+		// into the graph, so the dispatcher must be destroyed first. Reading the three
+		// bottom-up gives exactly that.
+		std::unique_ptr<sesh_ai::entry::ComposedExtension> composed_;
+
 		std::unique_ptr<Dispatcher> dispatcher_;
 		ReaperExtensionRegistrar registrar_;
 		RegistrationSet registrations_;
