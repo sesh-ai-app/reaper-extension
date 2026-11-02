@@ -1,5 +1,0 @@
-if(EXISTS "/Users/adamlockhart/Documents/adam/sesh-ai/reaper-extension/build-vcpkg/tests/sesh_ai_tests-b12d07c_tests.cmake")
-  include("/Users/adamlockhart/Documents/adam/sesh-ai/reaper-extension/build-vcpkg/tests/sesh_ai_tests-b12d07c_tests.cmake")
-else()
-  add_test(sesh_ai_tests_NOT_BUILT-b12d07c sesh_ai_tests_NOT_BUILT-b12d07c)
-endif()
