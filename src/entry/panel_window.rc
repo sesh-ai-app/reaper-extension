@@ -1,0 +1,38 @@
+// The dockable panel's dialog resource (task 25.1, requirements 1.1, 1.3).
+//
+// One resource script serves all three platforms. On Windows the resource compiler
+// builds it into the DLL. On macOS and Linux it is never compiled: WDL's
+// swell_resgen.pl reads it and writes panel_window.rc_mac_dlg, which
+// entry/reaper_panel_window.cpp expands into SWELL's registration. CMakeLists.txt
+// has the detail and the reasoning.
+//
+// Keep this file ASCII. The resource compiler reads it in the build machine's code
+// page, and the generator copies the caption into C++ byte for byte.
+//
+// Keep comments out of the block between BEGIN and END: the generator copies those
+// lines into the generated C++. It also reads every line outside that block, word
+// by word, looking for a resource name followed by the dialog or menu keyword, so
+// a comment must never begin with a single word followed by either keyword.
+//
+// The dialog has no controls. CEF draws the whole panel into a child window of
+// this one, so the dialog is a container and nothing else.
+//
+// The style follows the dockable windows SWS ships in sws_extension.rc: a
+// resizable pop-up with a caption, which REAPER reparents into its docker when
+// docked and floats when not. WS_THICKFRAME is the one flag SWELL reads from this
+// line (it becomes SWELL_DLG_WS_RESIZABLE); WS_CLIPCHILDREN is for Windows, so the
+// dialog does not paint over the browser window inside it.
+//
+// The caption repeats panel_display_name in entry/plugin_entry.cpp, because the
+// resource compiler cannot read a C++ constant.
+
+#include <windows.h>
+
+#include "panel_window_resource.h"
+
+SESH_AI_PANEL_DIALOG_RESOURCE_IDENTIFIER DIALOGEX 0, 0, 300, 400
+STYLE DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_CLIPCHILDREN
+CAPTION "Sesh AI"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+END

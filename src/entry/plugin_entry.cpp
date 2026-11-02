@@ -36,12 +36,13 @@
 // Two pieces of requirements 1.1 and 1.3 are still open, and both are about the window
 // rather than the graph:
 //
-//   - **The panel window itself.** `DockWindowAddEx` takes an `HWND`, and producing one
-//     needs a dialog resource plus the SWELL resource-generation step on macOS and Linux
-//     — a `CMakeLists.txt` change and packaging work, which is task 25.1. So the panel
-//     registration is taken by `register_panel_window`, which the window creation calls
-//     once it exists. The registrar's half of it is complete and symmetric; the window
-//     is not.
+//   - **The panel window itself.** `DockWindowAddEx` takes an `HWND`. Task 25.1 built
+//     the way to get one: the dialog resource `entry/panel_window.rc`, the SWELL
+//     resource-generation step `CMakeLists.txt` runs on macOS and Linux, and
+//     `entry/panel_window.h` with `entry/reaper_panel_window.h` to create the window.
+//     Nothing here creates it yet. Doing that when the panel action fires, and passing
+//     the result to `register_panel_window`, is task 25.2. The registrar's half is
+//     complete and symmetric; the call into it is not.
 //
 //   - **The CEF-backed browser.** `entry/panel_browser_creator.h` declares
 //     `make_panel_browser_creator`, and `entry/cef_panel_browser_creator.cpp` —
@@ -484,8 +485,9 @@ namespace {
 				return false;
 			}
 
-			// The panel window does not exist yet — see the file comment. Once it does,
-			// this shows it and `open_panel` creates the browser inside it.
+			// Nothing creates the panel window yet — see the file comment. Task 25.2
+			// creates it here through `entry/panel_window.h`, after which this shows it
+			// and `open_panel` creates the browser inside it.
 			if (panel_window_ == nullptr) {
 				return true;
 			}
@@ -614,9 +616,10 @@ namespace {
 			menu_item.description = "the Sesh AI entry in REAPER's customizable menus";
 			plan.registrations.push_back(std::move(menu_item));
 
-			// The dockable panel is deliberately not here. It needs an `HWND`, and the
-			// panel window does not exist yet — `register_panel_window` takes it into
-			// the same set when it does. See the file comment.
+			// The dockable panel is deliberately not here. It needs an `HWND`, which is
+			// created when the panel action fires rather than at load —
+			// `register_panel_window` takes it into the same set then. Task 25.1 built
+			// the window; 25.2 creates and docks it. See the file comment.
 
 			plan.start_timer = [this] {
 				// The tick. One of these is the only legal window in the extension for a
@@ -817,8 +820,9 @@ extern "C" {
 		REAPER_PLUGIN_HINSTANCE instance,
 		reaper_plugin_info_t* plugin_info)
 	{
-		// The module handle is REAPER's to keep. Nothing here needs it — the panel
-		// window will, once there is a dialog resource to load.
+		// The module handle is REAPER's to keep. Nothing here uses it yet. On Windows
+		// it is where the dialog resource lives, and task 25.2 passes it to
+		// `make_reaper_panel_window_platform` (`entry/reaper_panel_window.h`).
 		(void)instance;
 
 		// REAPER calls this through a C function pointer. An exception unwinding across

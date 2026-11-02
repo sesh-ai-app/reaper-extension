@@ -550,6 +550,30 @@ src/entry/plugin_entry.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/sesh_ai_extension.dir/build.make CMakeFiles/sesh_ai_extension.dir/src/entry/plugin_entry.cpp.s
 .PHONY : src/entry/plugin_entry.cpp.s
 
+src/entry/reaper_panel_window.o: src/entry/reaper_panel_window.cpp.o
+.PHONY : src/entry/reaper_panel_window.o
+
+# target to build an object file
+src/entry/reaper_panel_window.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sesh_ai_extension.dir/build.make CMakeFiles/sesh_ai_extension.dir/src/entry/reaper_panel_window.cpp.o
+.PHONY : src/entry/reaper_panel_window.cpp.o
+
+src/entry/reaper_panel_window.i: src/entry/reaper_panel_window.cpp.i
+.PHONY : src/entry/reaper_panel_window.i
+
+# target to preprocess a source file
+src/entry/reaper_panel_window.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sesh_ai_extension.dir/build.make CMakeFiles/sesh_ai_extension.dir/src/entry/reaper_panel_window.cpp.i
+.PHONY : src/entry/reaper_panel_window.cpp.i
+
+src/entry/reaper_panel_window.s: src/entry/reaper_panel_window.cpp.s
+.PHONY : src/entry/reaper_panel_window.s
+
+# target to generate assembly for a file
+src/entry/reaper_panel_window.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sesh_ai_extension.dir/build.make CMakeFiles/sesh_ai_extension.dir/src/entry/reaper_panel_window.cpp.s
+.PHONY : src/entry/reaper_panel_window.cpp.s
+
 src/entry/reaper_timer_registrar.o: src/entry/reaper_timer_registrar.cpp.o
 .PHONY : src/entry/reaper_timer_registrar.o
 
@@ -742,6 +766,14 @@ src/ui/ui_host.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/sesh_ai_extension.dir/build.make CMakeFiles/sesh_ai_extension.dir/src/ui/ui_host.cpp.s
 .PHONY : src/ui/ui_host.cpp.s
 
+third_party/reaper-sdk/WDL/swell/swell-modstub.o: third_party/reaper-sdk/WDL/swell/swell-modstub.mm.o
+.PHONY : third_party/reaper-sdk/WDL/swell/swell-modstub.o
+
+# target to build an object file
+third_party/reaper-sdk/WDL/swell/swell-modstub.mm.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/sesh_ai_extension.dir/build.make CMakeFiles/sesh_ai_extension.dir/third_party/reaper-sdk/WDL/swell/swell-modstub.mm.o
+.PHONY : third_party/reaper-sdk/WDL/swell/swell-modstub.mm.o
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -802,6 +834,9 @@ help:
 	@echo "... src/entry/plugin_entry.o"
 	@echo "... src/entry/plugin_entry.i"
 	@echo "... src/entry/plugin_entry.s"
+	@echo "... src/entry/reaper_panel_window.o"
+	@echo "... src/entry/reaper_panel_window.i"
+	@echo "... src/entry/reaper_panel_window.s"
 	@echo "... src/entry/reaper_timer_registrar.o"
 	@echo "... src/entry/reaper_timer_registrar.i"
 	@echo "... src/entry/reaper_timer_registrar.s"
@@ -826,6 +861,7 @@ help:
 	@echo "... src/ui/ui_host.o"
 	@echo "... src/ui/ui_host.i"
 	@echo "... src/ui/ui_host.s"
+	@echo "... third_party/reaper-sdk/WDL/swell/swell-modstub.o"
 .PHONY : help
 
 

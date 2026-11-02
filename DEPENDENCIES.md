@@ -215,6 +215,16 @@ not at all. The download is opt-in even though it is cheap, because a build that
 reaches the network without being asked is a worse default than one that explains
 what it is missing. CI passes `-DSESH_AI_REQUIRE_REAPER_SDK=ON`.
 
+**On macOS and Linux the build also needs Perl.** The panel's dialog resource,
+`src/entry/panel_window.rc`, is compiled directly on Windows. Elsewhere WDL's
+`swell/swell_resgen.pl` turns it into C++ at build time, and the library compiles
+WDL's SWELL module stub with `SWELL_PROVIDED_BY_APP` so the dialog is created
+through the SWELL functions REAPER provides. macOS ships `/usr/bin/perl`, Ubuntu
+ships `perl-base`, and all four CI runner images have Perl, so nothing installs
+it. WDL also includes a PHP version of the generator, which is not used because
+PHP is missing from the `macos-15` and `ubuntu-22.04` images. The "panel's dialog
+resource, and SWELL" section of `CMakeLists.txt` has the detail.
+
 **No header outside a `*_reaper_*.cpp` includes the SDK.** Each component that
 needs REAPER declares the narrowest interface it needs — `TimerRegistrar` is two
 methods — implements it in one translation unit that includes the SDK, and the
