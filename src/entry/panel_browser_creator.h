@@ -33,11 +33,11 @@
 // ---------------------------------------------------------------------------
 // What this does not do
 //
-// It does not create the panel window. `DockWindowAddEx` takes an `HWND`, and producing
-// one needs a dialog resource plus the SWELL resource-generation step on macOS and
-// Linux — a `CMakeLists.txt` change and packaging work that belongs with task 21.x.
-// `LoadedExtension::register_panel_window` already takes the registration when there is
-// a window to register; the creator below is what fills that window once there is one.
+// It does not create the panel window. That is `entry/panel_window.h`, over the dialog
+// resource and the SWELL resource-generation step task 25.1 added — `CMakeLists.txt`
+// has the build side. Creating that window when the panel action fires, docking it
+// through `LoadedExtension::register_panel_window`, and handing it to the creator below
+// are task 25.2.
 
 #ifndef SESH_AI_ENTRY_PANEL_BROWSER_CREATOR_H
 #define SESH_AI_ENTRY_PANEL_BROWSER_CREATOR_H

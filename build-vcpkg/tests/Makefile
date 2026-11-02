@@ -1053,6 +1053,30 @@ entry/extension_log_test.cpp.s:
 	cd /Users/adamlockhart/Documents/adam/sesh-ai/reaper-extension/build-vcpkg && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/sesh_ai_tests.dir/build.make tests/CMakeFiles/sesh_ai_tests.dir/entry/extension_log_test.cpp.s
 .PHONY : entry/extension_log_test.cpp.s
 
+entry/panel_window_test.o: entry/panel_window_test.cpp.o
+.PHONY : entry/panel_window_test.o
+
+# target to build an object file
+entry/panel_window_test.cpp.o:
+	cd /Users/adamlockhart/Documents/adam/sesh-ai/reaper-extension/build-vcpkg && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/sesh_ai_tests.dir/build.make tests/CMakeFiles/sesh_ai_tests.dir/entry/panel_window_test.cpp.o
+.PHONY : entry/panel_window_test.cpp.o
+
+entry/panel_window_test.i: entry/panel_window_test.cpp.i
+.PHONY : entry/panel_window_test.i
+
+# target to preprocess a source file
+entry/panel_window_test.cpp.i:
+	cd /Users/adamlockhart/Documents/adam/sesh-ai/reaper-extension/build-vcpkg && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/sesh_ai_tests.dir/build.make tests/CMakeFiles/sesh_ai_tests.dir/entry/panel_window_test.cpp.i
+.PHONY : entry/panel_window_test.cpp.i
+
+entry/panel_window_test.s: entry/panel_window_test.cpp.s
+.PHONY : entry/panel_window_test.s
+
+# target to generate assembly for a file
+entry/panel_window_test.cpp.s:
+	cd /Users/adamlockhart/Documents/adam/sesh-ai/reaper-extension/build-vcpkg && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/sesh_ai_tests.dir/build.make tests/CMakeFiles/sesh_ai_tests.dir/entry/panel_window_test.cpp.s
+.PHONY : entry/panel_window_test.cpp.s
+
 entry/plugin_entry_test.o: entry/plugin_entry_test.cpp.o
 .PHONY : entry/plugin_entry_test.o
 
@@ -1729,6 +1753,9 @@ help:
 	@echo "... entry/extension_log_test.o"
 	@echo "... entry/extension_log_test.i"
 	@echo "... entry/extension_log_test.s"
+	@echo "... entry/panel_window_test.o"
+	@echo "... entry/panel_window_test.i"
+	@echo "... entry/panel_window_test.s"
 	@echo "... entry/plugin_entry_test.o"
 	@echo "... entry/plugin_entry_test.i"
 	@echo "... entry/plugin_entry_test.s"

@@ -39,4 +39,4 @@ json-schema-validator provides CMake targets:
   find_package(nlohmann_json_schema_validator CONFIG REQUIRED)
   target_link_libraries(main PRIVATE nlohmann_json_schema_validator::validator)
 
-All requested installations completed successfully in: 160 us
+All requested installations completed successfully in: 123 us

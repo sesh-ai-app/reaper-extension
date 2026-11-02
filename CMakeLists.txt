@@ -232,7 +232,12 @@ if(MSVC)
 	# /W4 rather than /Wall: MSVC's /Wall includes per-header informational
 	# diagnostics from the standard library itself and is not usable as a project
 	# setting. /W4 is the level that corresponds to -Wall -Wextra in practice.
-	target_compile_options(sesh_ai_compiler_warnings INTERFACE /W4)
+	#
+	# Limited to C and C++ because the library also compiles a resource script on
+	# Windows (src/entry/panel_window.rc), and a compile option with no language
+	# condition reaches the resource compiler too — under the Ninja and Makefile
+	# generators at least — where /W4 is not an option rc.exe accepts.
+	target_compile_options(sesh_ai_compiler_warnings INTERFACE $<$<COMPILE_LANGUAGE:C,CXX>:/W4>)
 else()
 	target_compile_options(sesh_ai_compiler_warnings INTERFACE -Wall -Wextra)
 endif()
@@ -1133,6 +1138,165 @@ else()
 	)
 endif()
 
+# ---------------------------------------------------------------------------
+# The panel's dialog resource, and SWELL
+#
+# `DockWindowAddEx` takes an `HWND`, and the extension gets one by creating a dialog
+# from src/entry/panel_window.rc (task 25.1). One resource script, two routes to a
+# window:
+#
+#   Windows       the resource compiler builds the .rc into the DLL, and
+#                 `CreateDialogParam` finds it through the module handle. CMake's RC
+#                 language does this for any .rc in a target's sources; it is enabled
+#                 explicitly below rather than relied on as a side effect of MSVC.
+#   macOS, Linux  nothing compiles the .rc. WDL's generator turns it into C++ that
+#                 src/entry/reaper_panel_window.cpp includes, and SWELL builds the
+#                 dialog from that at run time.
+#
+# What the SDK contains, read at the pinned WDL commit (SESH_AI_WDL_COMMIT above) —
+# the six files below are byte-identical to that commit on GitHub:
+#
+#   WDL/swell/swell_resgen.sh   three lines of sh that run swell_resgen.pl beside it,
+#                               passing the arguments through. A wrapper, not a
+#                               generator.
+#   WDL/swell/swell_resgen.pl   the generator. Perl 5 using only core modules
+#                               (strict, warnings, Fcntl). Usage is
+#                               `swell_resgen.pl [--force] [--quiet] file.rc ...`, and
+#                               for each input it writes `<input>.rc_mac_dlg` and
+#                               `<input>.rc_mac_menu` beside it.
+#   WDL/swell/swell_resgen.php  a PHP port of the same thing. Not used, because PHP is
+#                               not on every runner image (below). ReaPack uses this
+#                               one, with PHP on its build machines.
+#   WDL/swell/swell-dlggen.h    what the generated file is written against. Its header
+#                               comment says to include it and then the .rc_mac_dlg,
+#                               which is what WDL/swell/sample_project/myapp.cpp and the
+#                               SDK's reaper-plugins/reaper_csurf/csurf_main.cpp both do.
+#                               Each dialog expands to a static object that adds itself
+#                               to SWELL_curmodule_dialogresource_head.
+#   WDL/swell/swell-modstub.mm
+#   WDL/swell/swell-modstub-generic.cpp
+#                               define SWELL_curmodule_dialogresource_head, and one
+#                               function pointer per SWELL function, under
+#                               SWELL_PROVIDED_BY_APP. The pointers are filled from
+#                               REAPER: on macOS by asking the application delegate for
+#                               `swellGetAPPAPIFunc` when the module loads, on Linux
+#                               through `SWELL_dllMain`, which REAPER calls. A function
+#                               REAPER does not supply becomes a stub returning zero.
+#
+# The generator is not the whole of it, and the task that commissioned this did not
+# know that. Creating the dialog calls SWELL, and without SWELL_PROVIDED_BY_APP
+# swell.h declares its functions as ordinary externs that nothing in the process
+# defines under those names — REAPER provides SWELL through the lookup above, not as
+# exported symbols. So the module stub is compiled into the library, and the
+# definition is set on every translation unit, because swell.h has to declare the
+# same thing everywhere it is included.
+#
+# The interpreter on each CI runner image, from actions/runner-images' published
+# readmes (images/ubuntu/Ubuntu2204-Readme.md, images/macos/macos-15-arm64-Readme.md,
+# images/macos/macos-15-Readme.md, images/windows/Windows2025-Readme.md):
+#
+#   ubuntu-22.04     Perl 5.34.0                  no PHP
+#   macos-15         Perl 5.44.0                  no PHP — the arm64 image
+#   macos-15-intel   Perl 5.44.0                  PHP 8.5
+#   windows-2025     Perl 5.42.0                  PHP 8.5 — and needs neither
+#
+# Perl is on all four, so no workflow installs anything. It is also on every
+# developer machine this builds on: macOS ships /usr/bin/perl, and Ubuntu's dpkg
+# depends on perl-base. find_package(Perl) still locates it, so a machine without
+# one is told so at configure time, and the library is listed as not buildable in the
+# same report as a missing SDK — rather than failing midway through a build.
+#
+# Generated at build time, not at configure time:
+#
+#   - The .rc is a source file people edit. As a custom command's dependency an edit
+#     regenerates on the next `cmake --build` like any other source; at configure
+#     time it would need CMAKE_CONFIGURE_DEPENDS and a full reconfigure per edit.
+#   - It matches how WDL itself wires it: WDL/swell/sample_project/Makefile has a
+#     build rule from res.rc to its two outputs, and ReaPack uses add_custom_command.
+#   - The output is a build product. It goes under generated/, beside
+#     schema_bundle_version.h, so `#include <entry/panel_window.rc_mac_dlg>` resolves
+#     the same way as every other generated header and src/ stays clean.
+#
+# cmake/GenerateSwellDialogResource.cmake wraps the generator, because its exit
+# status does not mean what a build step needs it to — that file has the detail.
+#
+# Verified on macOS only. The Linux path (GCC, swell-modstub-generic.cpp,
+# SWELL_dllMain) and the Windows path (rc.exe reading an LF-only .rc) are exercised
+# first by CI.
+# ---------------------------------------------------------------------------
+
+set(SESH_AI_PANEL_DIALOG_RESOURCE_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/src/entry/panel_window.rc")
+
+# The macro the .rc's DIALOGEX line names, and src/entry/panel_window_resource.h
+# defines. Checked in the generated output — see the script.
+set(SESH_AI_PANEL_DIALOG_RESOURCE_NAME "SESH_AI_PANEL_DIALOG_RESOURCE_IDENTIFIER")
+
+set(SESH_AI_PANEL_WINDOW_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/src/entry/reaper_panel_window.cpp")
+
+set(SESH_AI_PANEL_DIALOG_RESOURCE_SOURCES "")
+
+if(SESH_AI_PLATFORM_WINDOWS)
+	enable_language(RC)
+
+	list(APPEND SESH_AI_PANEL_DIALOG_RESOURCE_SOURCES "${SESH_AI_PANEL_DIALOG_RESOURCE_SCRIPT}")
+elseif(SESH_AI_REAPER_SDK_FOUND)
+	# The module stub on macOS is Objective-C++ — it asks NSApp's delegate for SWELL —
+	# so the language is enabled here, where it is needed, rather than in project().
+	if(SESH_AI_PLATFORM_MACOS)
+		enable_language(OBJCXX)
+	endif()
+
+	find_package(Perl)
+
+	set(SESH_AI_SWELL_DIRECTORY "${SESH_AI_REAPER_SDK_LOCATED_ROOT}/WDL/swell")
+	set(SESH_AI_SWELL_RESOURCE_GENERATOR "${SESH_AI_SWELL_DIRECTORY}/swell_resgen.pl")
+
+	if(SESH_AI_PLATFORM_MACOS)
+		set(SESH_AI_SWELL_MODULE_STUB "${SESH_AI_SWELL_DIRECTORY}/swell-modstub.mm")
+	else()
+		set(SESH_AI_SWELL_MODULE_STUB "${SESH_AI_SWELL_DIRECTORY}/swell-modstub-generic.cpp")
+	endif()
+
+	set(SESH_AI_GENERATED_RESOURCE_DIRECTORY "${SESH_AI_GENERATED_INCLUDE_DIRECTORY}/entry")
+	set(SESH_AI_GENERATED_PANEL_DIALOG "${SESH_AI_GENERATED_RESOURCE_DIRECTORY}/panel_window.rc_mac_dlg")
+
+	if(PERL_FOUND)
+		add_custom_command(
+			OUTPUT "${SESH_AI_GENERATED_PANEL_DIALOG}"
+			# Written by the generator whether or not the script has a menu. Named so
+			# that a clean removes it, not because anything includes it.
+			BYPRODUCTS
+				"${SESH_AI_GENERATED_RESOURCE_DIRECTORY}/panel_window.rc"
+				"${SESH_AI_GENERATED_RESOURCE_DIRECTORY}/panel_window.rc_mac_menu"
+			COMMAND "${CMAKE_COMMAND}"
+				"-DSESH_AI_PERL_EXECUTABLE=${PERL_EXECUTABLE}"
+				"-DSESH_AI_SWELL_RESOURCE_GENERATOR=${SESH_AI_SWELL_RESOURCE_GENERATOR}"
+				"-DSESH_AI_RESOURCE_SCRIPT=${SESH_AI_PANEL_DIALOG_RESOURCE_SCRIPT}"
+				"-DSESH_AI_GENERATED_RESOURCE_DIRECTORY=${SESH_AI_GENERATED_RESOURCE_DIRECTORY}"
+				"-DSESH_AI_EXPECTED_DIALOG_NAME=${SESH_AI_PANEL_DIALOG_RESOURCE_NAME}"
+				-P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateSwellDialogResource.cmake"
+			MAIN_DEPENDENCY "${SESH_AI_PANEL_DIALOG_RESOURCE_SCRIPT}"
+			DEPENDS
+				"${SESH_AI_SWELL_RESOURCE_GENERATOR}"
+				"${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateSwellDialogResource.cmake"
+			COMMENT "Generating the panel's SWELL dialog resource from src/entry/panel_window.rc"
+			VERBATIM
+		)
+
+		# Listed as a source so every generator orders the generation before the
+		# compile that includes it. HEADER_FILE_ONLY because the extension is not one
+		# CMake knows, and it must never be handed to a compiler on its own.
+		set_source_files_properties("${SESH_AI_GENERATED_PANEL_DIALOG}" PROPERTIES
+			HEADER_FILE_ONLY ON
+		)
+
+		list(APPEND SESH_AI_PANEL_DIALOG_RESOURCE_SOURCES
+			"${SESH_AI_GENERATED_PANEL_DIALOG}"
+			"${SESH_AI_SWELL_MODULE_STUB}"
+		)
+	endif()
+endif()
+
 # What the shared library cannot be built without. Collected rather than checked
 # one at a time so a developer with an empty machine is told everything they need
 # in one pass instead of discovering it a configure at a time.
@@ -1173,6 +1337,14 @@ endif()
 if(NOT SESH_AI_REAPER_SDK_FOUND)
 	list(APPEND SESH_AI_LIBRARY_MISSING_PREREQUISITES
 		"the REAPER extension SDK (configure with -DSESH_AI_DOWNLOAD_REAPER_SDK=ON)"
+	)
+endif()
+
+# Only asked where it is used, and only once there is an SDK to find the generator in —
+# without one the SDK is already the line above.
+if(NOT SESH_AI_PLATFORM_WINDOWS AND SESH_AI_REAPER_SDK_FOUND AND NOT PERL_FOUND)
+	list(APPEND SESH_AI_LIBRARY_MISSING_PREREQUISITES
+		"Perl, which runs WDL's swell_resgen.pl over the panel's dialog resource (macOS and Ubuntu both ship one, so check PATH before installing anything)"
 	)
 endif()
 
@@ -1222,6 +1394,58 @@ else()
 		nlohmann_json::nlohmann_json
 		nlohmann_json_schema_validator::validator
 	)
+
+	# The panel's dialog resource — see "The panel's dialog resource, and SWELL" above.
+	# The .rc on Windows; the generated dialog and WDL's module stub elsewhere.
+	target_sources(sesh_ai_extension PRIVATE ${SESH_AI_PANEL_DIALOG_RESOURCE_SOURCES})
+
+	if(NOT SESH_AI_PLATFORM_WINDOWS)
+		# On every translation unit, not only the two that create the dialog: swell.h
+		# declares each SWELL function as a pointer under this definition and as a
+		# function without it, and one name declared both ways across a library is an
+		# ODR violation that links.
+		target_compile_definitions(sesh_ai_extension PRIVATE SWELL_PROVIDED_BY_APP)
+
+		# swell-dlggen.h for the one file that expands the generated dialog, without
+		# putting the rest of WDL on the library's include path — the SDK section
+		# above keeps it off for a reason. As -isystem rather than the
+		# INCLUDE_DIRECTORIES property, so it is treated like the SDK headers and its
+		# warnings are not this project's to read.
+		set_source_files_properties("${SESH_AI_PANEL_WINDOW_SOURCE}" PROPERTIES
+			COMPILE_OPTIONS "-isystem;${SESH_AI_SWELL_DIRECTORY}"
+		)
+
+		# WDL's code, compiled here because nothing else provides the definitions it
+		# holds. Its warnings are as unfixable as the SDK's, hence -w.
+		#
+		# -fvisibility=hidden is required rather than tidy, and Linux is why. The stub
+		# defines one *data* symbol per SWELL function — `DestroyWindow` is a function
+		# pointer here — and REAPER's own SWELL, libSwell.so, exports *functions* under
+		# the same names. With default visibility, ELF lets a shared object's
+		# references to its own globals be interposed by the global scope, where
+		# REAPER's executable and libSwell.so come first, so the stub's start-up loop
+		# could end up writing through REAPER's function addresses instead of its own
+		# pointers. A symbol defined hidden is hidden in the linked library whatever
+		# other translation units declared, so the pointers bind inside it and are not
+		# exported. SWELL_dllMain, which REAPER does look up, carries its own
+		# default-visibility attribute and stays exported. macOS's two-level namespace
+		# already binds references this way, so there it is uniformity rather than a
+		# fix. Reasoned from the ELF rules, not observed: there is no Linux REAPER here.
+		#
+		# On the stub alone rather than as the target's visibility preset. The preset
+		# was tried: the vcpkg-built json-schema-validator archive is compiled with
+		# default visibility, and mixing the two produced 60 ld warnings about weak
+		# typeinfo symbols on the macOS build — noise about a hazard that is not this
+		# one.
+		set_source_files_properties("${SESH_AI_SWELL_MODULE_STUB}" PROPERTIES
+			COMPILE_OPTIONS "-w;-fvisibility=hidden"
+		)
+
+		if(SESH_AI_PLATFORM_MACOS)
+			# The module stub imports Cocoa for NSApp and NSLog.
+			target_link_libraries(sesh_ai_extension PRIVATE "-framework Cocoa")
+		endif()
+	endif()
 
 	# CEF, when a distribution was located. The `if` is what lets a contributor with no
 	# distribution still build the library — see the exclusion of
