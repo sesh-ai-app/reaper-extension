@@ -183,6 +183,28 @@ project(sesh-ai-extension
 	LANGUAGES C CXX
 )
 
+# Objective-C++ on macOS, for the same reason C is in project(): a language a
+# dependency needs has to be enabled before the dependency is reached.
+#
+# The project's own need is WDL's SWELL module stub, swell-modstub.mm, compiled
+# into the library further down. But once OBJCXX is enabled, CMake treats every
+# .mm source in the build as Objective-C++, including the two in CEF's wrapper
+# (cef_scoped_library_loader_mac.mm and cef_scoped_sandbox_context_mac.mm). A
+# directory processed before the language was enabled has no rule to compile it.
+# Enabling it beside the module stub, after the wrapper's add_subdirectory(),
+# configured cleanly and then failed at generate time, once per wrapper .mm file:
+# "Missing variable is: CMAKE_OBJCXX_COMPILE_OBJECT". Only the macOS CEF legs
+# broke: a CEF-less build has no wrapper, and no other platform enables the
+# language.
+#
+# A conditional enable_language() rather than a conditional LANGUAGES list,
+# because APPLE is only reliably set once project() has loaded the platform.
+# SESH_AI_PLATFORM_MACOS is derived from it further down, so it is not yet
+# defined here.
+if(APPLE)
+	enable_language(OBJCXX)
+endif()
+
 # ---------------------------------------------------------------------------
 # Language standard
 #
@@ -1240,12 +1262,10 @@ if(SESH_AI_PLATFORM_WINDOWS)
 
 	list(APPEND SESH_AI_PANEL_DIALOG_RESOURCE_SOURCES "${SESH_AI_PANEL_DIALOG_RESOURCE_SCRIPT}")
 elseif(SESH_AI_REAPER_SDK_FOUND)
-	# The module stub on macOS is Objective-C++ — it asks NSApp's delegate for SWELL —
-	# so the language is enabled here, where it is needed, rather than in project().
-	if(SESH_AI_PLATFORM_MACOS)
-		enable_language(OBJCXX)
-	endif()
-
+	# The module stub on macOS is Objective-C++, because it asks NSApp's delegate for
+	# SWELL. The language is enabled right after project(), not here where it is
+	# used. Enabling it here came after CEF's wrapper had been added, and the wrapper's
+	# own .mm files then had no compile rule; the comment there has the detail.
 	find_package(Perl)
 
 	set(SESH_AI_SWELL_DIRECTORY "${SESH_AI_REAPER_SDK_LOCATED_ROOT}/WDL/swell")
