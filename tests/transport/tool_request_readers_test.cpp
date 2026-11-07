@@ -829,8 +829,8 @@ TEST_CASE("the render reader binds the read side of the codec and nothing else")
 	// The write side is task 24.2's and is bound by `bind_render_result_writer`, which this
 	// function deliberately does not reach: the two halves of a codec are populated by two
 	// calls so that neither can quietly overwrite the other's members. Until the writer
-	// runs, `register_render_tool` reports a failed action rather than claiming a queued
-	// render — which is what keeps a half-built codec honest.
+	// runs, `register_render_tool` declines the codec rather than registering a render
+	// that could never report a queued job — which is what keeps a half-built codec honest.
 	//
 	// That the writer then completes it is `tool_result_writers_test.cpp`'s case; what is
 	// checked here is the half this binder owns.

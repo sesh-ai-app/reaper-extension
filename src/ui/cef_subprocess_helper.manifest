@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+	Embedded into the Windows build of the CEF subprocess helper (task 26.1). CMakeLists.txt
+	lists it as a source of sesh_ai_cef_subprocess_helper, and CMake hands .manifest sources
+	to the MSVC linker, which merges them with the manifest it generates.
+
+	The two sections cefsimple embeds, merged into one file. The compatibility section is
+	Chromium's build/win/compatibility.manifest at 154.0.8037.58, and the dependency is
+	cefsimple's win/cefsimple.exe.manifest at CEF g564dd6c. Without the supportedOS entry for
+	Windows 10, Windows reports itself to the process as Windows 8. cefsimple's trustInfo
+	section is left out on purpose. cefsimple links with /MANIFEST:NO and so has to supply its
+	own; this target lets the linker generate its default manifest, which already carries the
+	same asInvoker request, and merging a second copy into it is a risk with nothing to gain.
+-->
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
+	<compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
+		<application>
+			<!-- Windows Vista -->
+			<supportedOS Id="{e2011457-1546-43c5-a5fe-008deee3d3f0}"/>
+			<!-- Windows 7 -->
+			<supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
+			<!-- Windows 8 -->
+			<supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+			<!-- Windows 8.1 -->
+			<supportedOS Id="{1f676c76-80e1-4239-95bb-83d0f6d0da78}"/>
+			<!-- Windows 10 and 11 -->
+			<supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+			<!-- Required by Chromium for XAML islands in media scenarios: Windows 10 May 2019 Update. -->
+			<maxversiontested Id="10.0.18362.0"/>
+		</application>
+	</compatibility>
+	<dependency>
+		<dependentAssembly>
+			<assemblyIdentity type="Win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+		</dependentAssembly>
+	</dependency>
+</assembly>

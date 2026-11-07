@@ -83,10 +83,10 @@
 // `LoginPagePresenter` is the browser. In production it is the CEF browser the UI Host
 // already owns (task 17.2) — design.md has the UI Host driving the Token Manager for
 // exactly this reason, so the browser is created and shut down in one place rather than
-// two. The CEF-backed implementation therefore lands with the UI Host, not here: CEF is a
-// separate binary distribution that this build only locates behind `SESH_AI_CEF_FOUND`,
-// and a CEF-dependent translation unit under src/ would be swept into the extension
-// library's source glob and break the build for everyone configuring without it.
+// two. The CEF-backed implementation therefore lands with the UI Host, not here: the
+// shared library always links CEF, but the Catch2 suite compiles this header and has no
+// CEF distribution, so naming a CEF type here would put the whole flow out of the
+// suite's reach.
 //
 // `TokenEndpoint` is one HTTPS POST. Its production implementation belongs with the
 // transport layer, which is what brings the TLS stack and the JSON parser. It is declared

@@ -1,25 +1,20 @@
-// The CEF-backed half of `make_panel_browser_creator`.
-//
-// One of two definitions; `entry/panel_browser_creator_without_cef.cpp` is the other,
-// and `CMakeLists.txt` compiles exactly one — this one when a CEF distribution was
-// located. The header explains why that is a CMake decision rather than a preprocessor
-// one.
+// `make_panel_browser_creator`, over CEF.
 //
 // This is the only translation unit outside `src/ui/cef_browser_host.cpp` that names
 // `CefPanelBrowserHost`, which is the whole reason it is a file of its own rather than
-// part of `plugin_entry.cpp` or `extension_composition.cpp`. Either of those would make
-// the extension's library unbuildable without CEF rather than merely CEF-less.
+// part of `plugin_entry.cpp` or `extension_composition.cpp`. Keeping the name here keeps
+// every header the Catch2 suite compiles free of anything that needs CEF to link.
 //
 // ---------------------------------------------------------------------------
-// Not verified by anything on the machine this was written on
+// What the suite does not reach
 //
-// There is no CEF distribution here, so this file has been read and syntax-checked and
-// nothing more. It has not been linked, because linking needs the distribution, and it
-// has not been run, because running needs REAPER. What it does is translation — build a
-// host, initialize CEF, bind it, hand `UiHost` a `file://` URL — and every decision it
-// could have made instead lives behind `UiHost` and `DeferredBrowserHost`, both of
-// which the suite drives against recorders. Treat the ordering below as unverified
-// until the packaging work builds against a real distribution.
+// The library compiles and links this against the pinned distribution, but nothing
+// in the suite calls it: running it needs REAPER's panel window and a CEF that can
+// initialize. What it does is translation — build a host, initialize CEF, bind it,
+// hand `UiHost` a `file://` URL — and every decision it could have made instead lives
+// behind `UiHost` and `DeferredBrowserHost`, both of which the suite drives against
+// recorders. Treat the ordering below as unverified until checkpoint 28 runs it in
+// REAPER.
 
 #include <entry/panel_browser_creator.h>
 
@@ -133,7 +128,15 @@ namespace sesh_ai::entry {
 			// Ownership moves into the shared state, which the plugin entry holds for as
 			// long as the extension is loaded. It has to outlive the bind above, and the
 			// bind is why it cannot simply be a local.
+			ui::CefPanelBrowserHost* const cef_host = host.get();
 			state->browser_host = std::move(host);
+
+			// The tick calls this. It is what drains messages from JavaScript onto
+			// REAPER's main thread, and on macOS and Linux what runs CEF's loop. Set
+			// before the browser is created so the first tick after it pumps.
+			state->pump_browser_message_loop = [cef_host] {
+				cef_host->pump_message_loop();
+			};
 
 			const ui::CreateBrowserOutcome outcome =
 				ui_host.create_browser(application_entry_point_url);

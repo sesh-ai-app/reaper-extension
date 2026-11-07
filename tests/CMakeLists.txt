@@ -44,6 +44,23 @@ target_link_libraries(sesh_ai_tests PRIVATE sesh_ai_compiler_warnings)
 # does not inherit it.
 target_link_libraries(sesh_ai_tests PRIVATE sesh_ai_platform_floor)
 
+# The CEF subprocess helper's executable name as the root CMakeLists.txt builds it.
+# tests/entry/cef_subprocess_helper_location_test.cpp asserts it is the name the
+# extension looks for at run time, which is written separately in src/ui/ui_host.h. If
+# the two drifted apart, the helper would build and the extension would never find it,
+# and nothing would fail until a producer opened the panel. Defined with or without CEF,
+# because the suite builds either way and the drift is possible either way.
+target_compile_definitions(sesh_ai_tests PRIVATE
+	"SESH_AI_CEF_SUBPROCESS_HELPER_OUTPUT_NAME=\"${SESH_AI_CEF_SUBPROCESS_HELPER_OUTPUT_NAME}\""
+)
+
+# The directory the root CMakeLists.txt installs ui/dist as, for the same comparison:
+# tests/entry/panel_asset_directory_test.cpp asserts it is the directory the extension
+# looks for, which src/entry/panel_asset_directory.h writes separately.
+target_compile_definitions(sesh_ai_tests PRIVATE
+	"SESH_AI_APPLICATION_ASSET_DIRECTORY_NAME=\"${SESH_AI_APPLICATION_ASSET_DIRECTORY_NAME}\""
+)
+
 # The queue pair is the one thing in this codebase whose contract is about threads,
 # so the suite actually runs threads against it rather than reasoning about the
 # mutex. That needs pthreads linked explicitly on Linux.

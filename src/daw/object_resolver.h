@@ -87,8 +87,9 @@
 //
 // Structural roles are not derived here. `context/structural_role.h` owns the
 // derivation and the Project Context Builder already performs it per track
-// (requirement 6.6), so a role arrives on the snapshot as data. A track whose role is
-// absent is invisible to the third source, which is the refusing direction.
+// (requirement 6.6), so a role arrives on the track list as data, attached by GUID
+// through `assign_structural_roles`. A track whose role is absent is invisible to the
+// third source, which is the refusing direction.
 
 #ifndef SESH_AI_DAW_OBJECT_RESOLVER_H
 #define SESH_AI_DAW_OBJECT_RESOLVER_H
@@ -97,6 +98,7 @@
 #include <cctype>
 #include <cstddef>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -1168,6 +1170,74 @@ namespace sesh_ai::daw
 	}
 
 	// ---------------------------------------------------------------------------
+	// Attaching derived roles to a track list
+	// ---------------------------------------------------------------------------
+
+	namespace detail
+	{
+		// A GUID folded to one case, so a lookup agrees with `guids_match` about which
+		// GUIDs name the same track.
+		inline std::string guid_folded_for_lookup(std::string_view guid)
+		{
+			std::string folded{guid};
+
+			for (char& character : folded)
+			{
+				character = static_cast<char>(std::toupper(static_cast<unsigned char>(character)));
+			}
+
+			return folded;
+		}
+	}
+
+	// Gives each track the role `roles` reports for its GUID.
+	//
+	// The roles come from a different walk of REAPER's track list than `tracks` did —
+	// the Project Context Builder's — so the two are joined on GUID, compared the way
+	// `guids_match` compares them. A track the roles do not mention keeps whatever it
+	// had, which for an indexed track is no role and so the refusing direction: it is
+	// invisible to the role source rather than given a role nobody derived for it.
+	//
+	// If REAPER reported one GUID twice, the first role wins. It does not happen, and a
+	// GUID selector over such a list is already ambiguous by `resolve_track_by_guid`.
+	inline void assign_structural_roles(
+		std::vector<ResolvableTrack>& tracks,
+		const context::TrackStructuralRoles& roles)
+	{
+		if (roles.empty())
+		{
+			return;
+		}
+
+		std::map<std::string, context::StructuralRole> role_by_folded_guid;
+
+		for (const context::TrackStructuralRole& reported : roles)
+		{
+			if (reported.track_guid.empty())
+			{
+				continue;
+			}
+
+			role_by_folded_guid.emplace(detail::guid_folded_for_lookup(reported.track_guid), reported.role);
+		}
+
+		for (ResolvableTrack& track : tracks)
+		{
+			if (track.guid.empty())
+			{
+				continue;
+			}
+
+			const auto found = role_by_folded_guid.find(detail::guid_folded_for_lookup(track.guid));
+
+			if (found != role_by_folded_guid.end())
+			{
+				track.structural_role = found->second;
+			}
+		}
+	}
+
+	// ---------------------------------------------------------------------------
 	// The REAPER-facing implementations
 	//
 	// Declared here, defined in object_resolver.cpp, which is the only translation
@@ -1193,7 +1263,8 @@ namespace sesh_ai::daw
 	// keeps the SDK confined to one translation unit per component.
 	// ---------------------------------------------------------------------------
 
-	// Walks REAPER's track list and reads a GUID and a name per track.
+	// Walks REAPER's track list and reads a GUID and a name per track, then attaches
+	// the derived roles the structural role reader supplies.
 	//
 	// The master track is appended after the indexed list, because "the master" is a
 	// reference a producer makes and `GetTrack` does not return it. Its
@@ -1202,13 +1273,20 @@ namespace sesh_ai::daw
 	class ReaperTrackListSource final : public TrackListSource
 	{
 	public:
-		// Supplies the derived role for a track, keyed by GUID. Requirement 6.6 has
-		// the Project Context Builder deriving roles already, so this is a callback
-		// into work that exists rather than a second derivation — and it is optional,
-		// because a resolver constructed before the context builder runs should refuse
-		// role patterns rather than answer them wrongly.
-		using StructuralRoleProvider =
-			std::function<std::optional<context::StructuralRole>(const std::string& track_guid)>;
+		// Supplies every track's derived role, keyed by GUID, as the project stands at
+		// the moment it is called. Called once per `tracks_in_project_order`, after the
+		// walk, rather than once per track: a role depends on the tracks around it
+		// (a folder parent is one because of what follows it), so deriving one means
+		// reading them all, and doing that per track would walk the project once for
+		// every track in it.
+		//
+		// Requirement 6.6 has the Project Context Builder deriving roles already, so
+		// this is a callback into work that exists rather than a second derivation.
+		// The composition root binds it to `context::read_track_structural_roles` over
+		// the same source the builder reads; see extension_composition.cpp. Optional,
+		// and empty means no track carries a role, so a role pattern is refused rather
+		// than answered wrongly.
+		using StructuralRoleReader = std::function<context::TrackStructuralRoles()>;
 
 		// `plugin_info` is the pointer REAPER passed to ReaperPluginEntry; it stays
 		// valid for the lifetime of the loaded extension. Null project means REAPER's
@@ -1216,7 +1294,7 @@ namespace sesh_ai::daw
 		explicit ReaperTrackListSource(
 			reaper_plugin_info_t* plugin_info,
 			ReaProject* project = nullptr,
-			StructuralRoleProvider structural_role_provider = {});
+			StructuralRoleReader structural_role_reader = {});
 		~ReaperTrackListSource() override;
 
 		std::vector<ResolvableTrack> tracks_in_project_order() const override;
@@ -1231,7 +1309,7 @@ namespace sesh_ai::daw
 	private:
 		std::unique_ptr<reaper_track_list_api> api_;
 		ReaProject* project_;
-		StructuralRoleProvider structural_role_provider_;
+		StructuralRoleReader structural_role_reader_;
 
 		// Kept for the same reason the hosts that publish it keep it: a partial
 		// snapshot is easier to explain when the names are to hand. Private, because

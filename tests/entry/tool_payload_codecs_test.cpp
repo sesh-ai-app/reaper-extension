@@ -276,39 +276,23 @@ TEST_CASE("a codec left unbound costs exactly its own family", "[codecs][registr
 		));
 	}
 
-	SECTION("except render, which registers anyway and fails every call instead")
+	SECTION("render, which is one tool and its own family")
 	{
-		// Worth knowing, because it is the one family the registration count cannot
-		// speak for. `register_render_tool` registers unconditionally and checks its
-		// codec inside the handler, reporting a failed action — so an unbound render
-		// codec is 42 registered tools and one that never renders.
-		//
-		// The gap is reported, just not at load: the producer gets
-		// `missing_render_input_code` rather than an unknown tool. So the count below is
-		// 42 on purpose and the assertion that matters is the one after it.
+		// The same failure mode at its smallest. `register_render_tool` declines an
+		// incomplete codec the way `register_marker_region_tools` does, so the count
+		// speaks for it too and the load-time log line names it.
 		codecs.render = sesh_ai::daw::tools::render_payload_codec<Json>{};
 
 		RealCodecRegistry composed{std::move(codecs)};
 
-		REQUIRE(composed.report().registered_tool_names.size() == 42);
-		REQUIRE(composed.report().every_constrained_tool_registered());
+		REQUIRE(composed.report().registered_tool_names.size() == 42 - 1);
+		REQUIRE_FALSE(composed.report().every_constrained_tool_registered());
 
-		ExecutorToolCallRouter<StubInboundEnvelope, Json> router{
-			composed.executor(),
-			build_tool_call_codec<StubInboundEnvelope, Json>()
-		};
+		const std::vector<std::string>& missing =
+			composed.report().unregistered_constrained_tool_names;
 
-		const sesh_ai::transport::ToolCallResponse<Json> response =
-			router.execute_tool_call("render", a_tool_call("render", "call-render"));
-
-		REQUIRE(response.tool_is_known);
-
-		// A handler that reports action outcomes is what the framework reports as a
-		// partial, so the refusal arrives as a partial outcome naming the code — which
-		// is also why its schema path is the partial contract rather than render's own
-		// output schema.
-		REQUIRE(response.payload.dump().find(sesh_ai::daw::tools::missing_render_input_code)
-			!= std::string::npos);
+		REQUIRE(missing.size() == 1);
+		REQUIRE(sesh_ai_tests::contains(missing, "render"));
 	}
 }
 

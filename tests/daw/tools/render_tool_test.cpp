@@ -17,6 +17,8 @@
 //     coordinator's request, so a retry after an approved overwrite queues.
 //   - A coordinator failure is a failed action carrying a reason rather than a
 //     refusal — the two are different answers to the producer.
+//   - A call with no readable input is a failed action, while a codec with either half
+//     missing is declined at registration like every other family's.
 //   - An unknown tool name still produces requirement 23.6's error rather than
 //     reaching the handler at all.
 //
@@ -65,6 +67,7 @@ using sesh_ai::daw::undo_manager;
 using sesh_ai::daw::undo_report_of;
 using sesh_ai::daw::undo_stack;
 using sesh_ai::daw::unknown_tool_error;
+using sesh_ai::daw::tools::missing_render_input_code;
 using sesh_ai::daw::tools::register_render_tool;
 using sesh_ai::daw::tools::render_payload_codec;
 using sesh_ai::daw::tools::render_tool_name;
@@ -513,25 +516,74 @@ TEST_CASE("a call the coordinator cannot make sense of fails with a reason", "[r
 	CHECK_FALSE(partial.undo.has_value());
 }
 
-TEST_CASE("a render with no result writer fails rather than reporting a queued job", "[render_tool]")
+TEST_CASE("a call with no readable input fails rather than queueing a default render", "[render_tool]")
 {
 	scripted_render_host host = host_with_a_renderable_session();
 	render_coordinator coordinator{host};
 	render_tool_fixture fixture;
 
-	// The half of the codec the real build binds to `nlohmann::json`, left empty. A
-	// success nobody can serialise has to be a failure carrying a reason, not a
-	// default-constructed payload claiming a render was queued.
-	render_payload_codec<test_payload> codec = scripted_codec();
-	codec.write_render_result = {};
-
 	REQUIRE(
-		register_render_tool(fixture.registry, coordinator, codec)
+		register_render_tool(fixture.registry, coordinator, scripted_codec())
 		== tool_registration_outcome::registered);
 
+	// What an unreadable payload looks like by the time it reaches the executor. The
+	// codec is complete, so this is the call's problem rather than the build's, and it
+	// has to be a failed action: a default-constructed request would be a master mix.
+	test_call call;
+	call.tool_name = std::string{render_tool_name};
+	call.request_id = "request-render";
+	call.validated_input = nullptr;
+
+	const test_outcome outcome = fixture.executor.execute(call);
+
+	const tool_partial_outcome<test_payload>& partial = partial_of(outcome);
+	REQUIRE(partial.actions.size() == 1);
+	CHECK(partial.failed_action_count() == 1);
+
+	const action_failed& failure = std::get<action_failed>(partial.actions[0]);
+	CHECK(failure.error.code() == std::string{missing_render_input_code});
+
+	CHECK(host.queue_additions == 0);
+	CHECK(fixture.stack.begin_block_call_count == 0);
+}
+
+TEST_CASE("an incomplete codec declines registration rather than registering a render that cannot run", "[render_tool]")
+{
+	scripted_render_host host = host_with_a_renderable_session();
+	render_coordinator coordinator{host};
+	render_tool_fixture fixture;
+
+	// Either half left empty is the same answer, and it is the answer the other
+	// codec-taking families give: no handler, so the composition report names `render`
+	// at load instead of every call failing after it.
+	SECTION("with no result writer")
+	{
+		render_payload_codec<test_payload> codec = scripted_codec();
+		codec.write_render_result = {};
+
+		CHECK(
+			register_render_tool(fixture.registry, coordinator, codec)
+			== tool_registration_outcome::no_handler_supplied);
+	}
+
+	SECTION("with no request reader")
+	{
+		render_payload_codec<test_payload> codec = scripted_codec();
+		codec.read_render_request = {};
+
+		CHECK(
+			register_render_tool(fixture.registry, coordinator, codec)
+			== tool_registration_outcome::no_handler_supplied);
+	}
+
+	CHECK(fixture.registry.find_tool(render_tool_name) == nullptr);
+
+	// A success nobody can serialise still never claims a queued render. It now cannot
+	// be dispatched at all, and requirement 23.6's error names the tool instead.
 	const test_outcome outcome = fixture.dispatch();
 
-	CHECK(partial_of(outcome).failed_action_count() == 1);
+	REQUIRE(std::holds_alternative<unknown_tool_error>(outcome));
+	CHECK(std::get<unknown_tool_error>(outcome).tool_name == std::string{render_tool_name});
 	CHECK(host.queue_additions == 0);
 }
 

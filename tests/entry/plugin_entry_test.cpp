@@ -476,8 +476,8 @@ TEST_CASE("a browser that cannot be created says which half failed", "[entry][pa
 
 	SECTION("nothing is wired to create one")
 	{
-		// The state a build with no CEF distribution is in. Reported as itself rather
-		// than as CEF refusing, because the two call for different answers.
+		// The state an installation missing a file the browser needs is in. Reported as
+		// itself rather than as CEF refusing, because the two call for different answers.
 		StartupPlan plan = plan_with(three_registrations());
 		plan.create_panel_browser = nullptr;
 

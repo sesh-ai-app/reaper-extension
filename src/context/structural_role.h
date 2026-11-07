@@ -37,6 +37,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace sesh_ai::context
 {
@@ -162,6 +163,22 @@ namespace sesh_ai::context
 		StructuralRole role = StructuralRole::normal;
 		StructuralRoleSignals signals{};
 	};
+
+	// One track's derived role, keyed by the track's GUID.
+	//
+	// This is the shape a role crosses a component boundary in: the Project Context
+	// Builder derives roles and the Object Resolver matches on them, and neither should
+	// have to know the other's track type to hand one over. Keyed by GUID rather than by
+	// position because the two walk REAPER's track list separately, and a GUID is the
+	// one thing about a track that both walks agree names it.
+	struct TrackStructuralRole
+	{
+		std::string track_guid;
+		StructuralRole role = StructuralRole::normal;
+	};
+
+	// Every role a snapshot reports, in the snapshot's own track order.
+	using TrackStructuralRoles = std::vector<TrackStructuralRole>;
 
 	// Brings the counted signals into the non-negative range requirement 18.1 states,
 	// and caps the feeding-children count at the number of children.

@@ -74,6 +74,32 @@
 // is recorded as such. During the build-out the Socket.IO connection does not exist
 // yet; "there is no socket to close" must advance the sequence, while "the socket
 // refused to close" must not.
+//
+// ---------------------------------------------------------------------------
+// The full sequence, with the panel window in it (task 25.2)
+//
+// The five steps did not change. The panel window adds two constraints — CEF's browser
+// is its child, so the window outlives CEF's shutdown; and it is docked, so it leaves
+// REAPER's docker before it is destroyed — and both fit inside step five without
+// moving anything. What `entry/plugin_entry.cpp` performs, in order:
+//
+//   1. Unregister the timer.
+//   2. Destroy the Main-Thread Dispatcher and the queues.
+//   3. Shut down CEF: `UiHost::shut_down` closes the browser and calls `CefShutdown`
+//      while the panel window is still alive and docked; then the object graph and the
+//      CEF-backed browser host are destroyed.
+//   4. Close the Socket.IO connection (nothing wired yet; recorded as such).
+//   5. Exit: `release_all` gives the registrations back in reverse — the dock first,
+//      which is `DockWindowRemove`, then the menu item, the action hook, and the action
+//      — and `on_exit` destroys the panel window last of all
+//      (`DockablePanel::destroy_window`, which refuses if the window is still docked or
+//      still holds a browser).
+//
+// The dock is the last registration taken, because it happens when the panel action
+// first fires rather than at load, so it is the first released without any special
+// case. The window could not be destroyed at step three instead: undocking is the dock
+// registration's release, and pulling one registration out of `release_all` early is
+// the two-lists problem the file comment describes.
 
 #ifndef SESH_AI_ENTRY_PLUGIN_ENTRY_H
 #define SESH_AI_ENTRY_PLUGIN_ENTRY_H
@@ -239,13 +265,14 @@ namespace sesh_ai::entry {
 	//
 	// `parent_window_handle` is the panel — an `HWND` on Windows and a SWELL `HWND` on
 	// macOS and Linux, held as `void*` so this header needs neither `windows.h` nor
-	// swell. False when CEF refused.
+	// swell. False when CEF refused. Installed by `install_panel_browser_creator`
+	// (`entry/panel_browser_creator.h`), and empty when a file the browser needs was not
+	// found beside the binary.
 	//
-	// A seam rather than a direct call into `ui::UiHost`, for the reason
-	// `CMakeLists.txt` records: `src/ui/cef_browser_host.cpp` is the only translation
-	// unit allowed to need a CEF distribution, and a build without one drops it and
-	// keeps going. Naming the CEF-backed browser host from here would make the
-	// extension's library unbuildable without CEF rather than merely CEF-less.
+	// A seam rather than a direct call into `ui::UiHost`, because the Catch2 suite
+	// compiles this header and has no CEF distribution to link against. Naming the
+	// CEF-backed browser host from here would put the whole entry out of the suite's
+	// reach; `entry/cef_panel_browser_creator.cpp` names it instead.
 	using PanelBrowserCreator = std::function<bool(void* parent_window_handle)>;
 
 	// What the extension registers at load, and the timer that drives the Main-Thread
@@ -292,6 +319,8 @@ namespace sesh_ai::entry {
 		std::function<bool()> close_socket_io_connection;
 
 		// Anything the exit step has to do beyond releasing the registrations. Optional.
+		// Runs after `release_all`, which is what makes it the place the panel window is
+		// destroyed: by then the window has left REAPER's docker.
 		std::function<bool()> on_exit;
 	};
 
@@ -326,8 +355,9 @@ namespace sesh_ai::entry {
 		// crash, not the empty panel.
 		no_panel_window,
 
-		// Nothing is wired to create a browser. Distinct from CEF refusing, so a build
-		// with no CEF distribution reads as what it is.
+		// Nothing is wired to create a browser. Distinct from CEF refusing, so an
+		// installation missing the assets, the helper, or CEF's library reads as what
+		// it is.
 		no_browser_creator,
 
 		// CEF said no. `UiHost`'s own refusal reason says which.

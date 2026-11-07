@@ -34,9 +34,10 @@
 // already the answer for "CEF said no" — so no new refusal reason is needed and no
 // caller learns a new state.
 //
-// That matters for the case it is most likely to meet: a build with no CEF
-// distribution, where `make_panel_browser_creator` installs nothing and this host is
-// never bound. The panel reports `no_browser_creator`, every publish is refused, and
+// That matters for the case it is most likely to meet: an installation missing a file
+// the browser needs — the React application's assets, the CEF subprocess helper, or
+// CEF's library — where `install_panel_browser_creator` installs nothing and this host
+// is never bound. The panel reports `no_browser_creator`, every publish is refused, and
 // the extension otherwise runs — the transport connects, tools execute, results go
 // back. Nothing pretends a browser is there.
 //

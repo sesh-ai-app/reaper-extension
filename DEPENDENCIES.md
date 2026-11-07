@@ -57,6 +57,10 @@ configuration lists whatever is missing and carries on without it. CI passes
 configuration failure, so a build with no library is impossible to ship by
 accident and perfectly possible to work in.
 
+CEF is the exception. It is acquired only once everything above is present, and
+then a distribution that cannot be found or downloaded is a configuration error,
+not a reason to skip the library. See the CEF section below.
+
 ## socket.io-client-cpp is not in the manifest
 
 It used to be reachable as the `socket-io-client` vcpkg port, and the design
@@ -253,11 +257,20 @@ module CEF ships for embedders. Once found, `find_package(CEF)` runs and the
 wrapper in `libcef_dll/` is compiled from source with the same settings as the
 code consuming it.
 
-To download the pinned distribution into `third_party/cef` (ignored by git):
+The shared library is always built against CEF. When none of the three places
+holds a distribution, configuration downloads the pinned one into
+`third_party/cef` (ignored by git), so a plain configure with vcpkg is enough:
 
 ```sh
-cmake -S . -B build -DSESH_AI_DOWNLOAD_CEF=ON
+cmake -S . -B build
 ```
+
+The download happens only in a configure that is about to create the library,
+once every other prerequisite above is present. A configure without vcpkg, which
+builds only the Catch2 suite, never downloads CEF and never configures it, even
+when a distribution is already on disk. `-DSESH_AI_DOWNLOAD_CEF=OFF` forbids the
+download, and then one of the three places above has to hold a distribution
+already.
 
 The archive is verified against the SHA1 published in the
 [CEF build index](https://cef-builds.spotifycdn.com/index.json) before it is
@@ -268,15 +281,94 @@ To do it by hand instead, download the `minimal` archive for your platform from
 [the CEF builds page](https://cef-builds.spotifycdn.com/index.html), extract it,
 and point `-DSESH_AI_CEF_ROOT` at the result.
 
-Without a distribution, configuration reports that the UI host cannot be built
-and continues — there is no UI host yet, and blocking the test suite on a
-hundreds-of-megabytes download nobody needs yet would be the wrong trade. CI
-passes `-DSESH_AI_REQUIRE_CEF=ON`, which turns the same situation into a
-configuration failure, so a CEF-less build can never ship by accident.
+CEF is required for the extension. When the library would be created and no
+distribution can be located, downloaded or extracted, configuration stops with a
+message saying how to supply one. There is no option to build the library
+without it, because an extension built that way would load in REAPER and never
+be able to show its panel. The Catch2 suite is the one target that needs neither
+CEF nor vcpkg; see "Catch2" below.
 
-CEF is BSD-licensed; the Chromium binaries it wraps carry their own notices in
-`LICENSE.txt` and `CREDITS.html` inside the distribution. Both have to be
-included in what ships to producers.
+CEF is BSD-licensed, in the distribution's `LICENSE.txt`, and the Chromium
+binaries it wraps carry their own notices in `CREDITS.html`. Both ship, in
+`sesh_ai_licenses/cef/`; see "What ships, and its notices" below.
+
+### Locales
+
+The distribution carries 55 Chromium locales. The release ships eight, which
+cover the seven the chat panel speaks plus Chromium's own fallback: `en-US`,
+`de`, `ja`, `pt-BR`, `es`, `es-419`, `fr` and `it`. `en-US` is required
+because Chromium falls back to it and loads no locale at all without it, and
+`es-419` is there because Chromium resolves Latin American Spanish to it rather
+than to `es`. On Windows and Linux they are `locales/<name>.pak`; on macOS they
+are `<name>.lproj` directories inside the framework, trimmed before it is
+signed. The mapping and the Chromium sources it was checked against are in
+`SESH_AI_CEF_KEPT_LOCALES` in `CMakeLists.txt`. Bumping the CEF pin means
+checking those names again; a name the distribution lacks stops the build.
+
+## What ships, and its notices
+
+`cmake --install build --prefix <dir>` produces the tree a producer unpacks into
+REAPER's `UserPlugins`, and the release workflow archives exactly that. The
+notices travel in `sesh_ai_licenses/`, never loose beside the binary:
+`UserPlugins` is shared by every extension installed, and `LICENSE` or
+`CREDITS.html` from another extension would overwrite ours, or ours theirs.
+
+| File | Covers | Why it ships |
+|---|---|---|
+| `sesh_ai_licenses/LICENSE` | this repository | MIT; the notice accompanies copies |
+| `sesh_ai_licenses/cef/LICENSE.txt` | CEF, including `libcef_dll_wrapper` | BSD-3; the wrapper is statically linked into the extension and the helpers, and the CEF binaries ship |
+| `sesh_ai_licenses/cef/CREDITS.html` | Chromium and its third-party code | inside the CEF binaries that ship |
+| `sesh_ai_licenses/nlohmann-json/copyright` | nlohmann/json | MIT; compiled into the extension |
+| `sesh_ai_licenses/json-schema-validator/copyright` | nlohmann/json-schema-validator | MIT; statically linked into the extension |
+| `sesh_ai_licenses/ui/third-party-licenses.md` | the npm packages in the chat panel's bundle: React, i18next, react-markdown and what they pull in | MIT and ISC; compiled into the minified script, which keeps none of their notices |
+
+The two vcpkg notices are the `copyright` files vcpkg installs per port under
+`vcpkg_installed/<triplet>/share/<port>/`, installed as they are rather than
+restated, so they are always the text of the version linked. An install
+configured without vcpkg has no such files and stops rather than shipping the
+binary without them.
+
+The UI's notices are written by `npm run build`, through Vite's `build.license`
+option, to `ui/dist/third-party-licenses.md`: each package's name, version,
+SPDX identifier and the text of its `LICENSE`. Vite lists the packages Rollup
+put in the bundle, so the dev dependencies (Vite, Vitest, ESLint, TypeScript)
+and what tree-shaking removed are not in it; that is 57 packages today, out of
+94 non-dev entries in `ui/package-lock.json`. The rest are type-only packages
+and modules no bundled code reaches, such as `debug`, which `micromark` imports
+only in its development build. The install puts the file in
+`sesh_ai_licenses/ui/` and leaves it out of `sesh_ai_ui/`, and a `ui/dist`
+without it stops the install, as a missing `index.html` does.
+
+Vite reads only `LICENSE`, `LICENCE` and `COPYING`. Apache-2.0 also requires a
+package's `NOTICE` file to be reproduced, and Vite never reads one. No bundled
+package is Apache-2.0 or ships a `NOTICE` today; the lockfile's Apache-2.0
+packages are TypeScript and dependencies of ESLint, Vitest, jsdom and Testing
+Library, none of them bundled. A
+check in `ui/vite.config.ts` fails the UI build when a bundled package ships a
+`NOTICE` file, or has no licence file and would be listed with only its
+identifier, so a dependency change that adds either has to reproduce it before
+the build passes.
+
+Linked in, and needing no notice of its own:
+
+- **WDL's SWELL module stub** (`swell-modstub.mm` on macOS,
+  `swell-modstub-generic.cpp` on Linux) and the **REAPER SDK headers** are under
+  Cockos's zlib-style licence, which asks for nothing in a binary distribution.
+
+Not in what ships:
+
+- **Catch2** links only into `sesh_ai_tests`, which is not installed.
+- **socket.io-client-cpp** is declared but not yet fetched or linked; nothing in
+  the extension calls it. When the transport work links it, its MIT notice and
+  those of the `websocketpp`, `asio` and `rapidjson` it vendors have to join the
+  table above, and OpenSSL's with them.
+- **`SECURITY.md` and this file.** Both are about the repository, not the
+  installed extension, and both would be more generic names in a shared
+  directory.
+- **The Windows import library** of the extension, and CEF's `libcef.lib`.
+  Both are link-time only.
+- **The Vite source map**, which only a developer with `ui/` in front of them
+  has a use for.
 
 ## Catch2
 
@@ -301,14 +393,19 @@ on its include path. That is deliberate — see the SDK section above.
 
 ## CI configuration
 
-The three `REQUIRE` options exist so that everything configuration is willing to
-skip on a developer machine is a failure in CI:
+The two `REQUIRE` options exist so that everything configuration is willing to
+skip on a developer machine is a failure in CI. CEF needs no option: its download
+is on by default, and a library that cannot get it already stops configuration.
+Every leg of both workflows configures this way, so every leg builds against
+CEF. `ci.yml` exports `VCPKG_ROOT` instead of passing `-DSESH_AI_VCPKG_ROOT`,
+for the Windows path reason its comment gives, and `release.yml` adds the vcpkg
+triplet and, on macOS, the architecture.
 
 ```sh
 cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
   -DSESH_AI_VCPKG_ROOT=/path/to/vcpkg \
   -DSESH_AI_DOWNLOAD_REAPER_SDK=ON -DSESH_AI_REQUIRE_REAPER_SDK=ON \
-  -DSESH_AI_DOWNLOAD_CEF=ON -DSESH_AI_REQUIRE_CEF=ON \
   -DSESH_AI_REQUIRE_EXTENSION_LIBRARY=ON
 ```
 
@@ -336,7 +433,7 @@ linked it provided, so the only way to promise 2.35 is to link on 2.35 — which
 why the Linux legs build on `ubuntu-22.04` rather than on a newer image.
 
 `scripts/check-cef-platform-floor.sh` is what keeps these honest. It runs on the
-macOS and Linux CEF legs in both workflows, reads CEF's own minimum off the
+macOS and Linux legs in both workflows, reads CEF's own minimum off the
 downloaded distribution — `minos` from the framework's `LC_BUILD_VERSION`, and the
 highest versioned glibc symbol in `libcef.so` — and fails the build when either
 exceeds the floor above. CEF sets the real minimum on both platforms, and without

@@ -131,15 +131,23 @@ namespace sesh_ai::daw::tools
 	// How the request is read out of an already-validated input, and how the result is
 	// written into the payload type.
 	//
-	// Both members may be empty, and an empty one is a failed action carrying a reason
-	// rather than a default-constructed request. A `render` call whose source nobody
-	// extracted would otherwise queue a master mix, because `render_source` happens to
-	// default to `master_mix` — one file where the producer asked for eight.
+	// Either member may be empty, and an empty one means `render` is not registered at
+	// all — the same answer every other codec-taking family gives, so the gap shows up
+	// in the composition report and the load-time log line rather than one failed call
+	// at a time. Registering anyway would be worse than it looks: a handler with no
+	// reader that fell back to a default-constructed request would queue a master mix,
+	// because `render_source` happens to default to `master_mix` — one file where the
+	// producer asked for eight.
 	template <typename JsonValue>
 	struct render_payload_codec
 	{
 		std::function<render_request(const JsonValue&)> read_render_request;
 		std::function<JsonValue(const render_result&)> write_render_result;
+
+		bool is_complete() const
+		{
+			return read_render_request && write_render_result;
+		}
 	};
 
 	// ---------------------------------------------------------------------------
@@ -153,6 +161,13 @@ namespace sesh_ai::daw::tools
 	// no marker, which is requirement 12.6, and it is the only one whose body may
 	// return the collision refusal the coordinator produces.
 	//
+	// An incomplete codec is declined before the registry is touched, and the answer is
+	// `no_handler_supplied` — the value `register_tempo_tools` and
+	// `register_marker_region_tools` report for each of their tools in the same case, so
+	// `compose_tool_handler_registry` records `render` as refused and leaves it among the
+	// unregistered names exactly as it does theirs. That is also what lets the handler
+	// below call both callables without checking them.
+	//
 	// `coordinator` and the codec's callables must outlive the registry.
 	template <typename JsonValue>
 	tool_registration_outcome register_render_tool(
@@ -160,6 +175,11 @@ namespace sesh_ai::daw::tools
 		render_coordinator& coordinator,
 		render_payload_codec<JsonValue> codec)
 	{
+		if (!codec.is_complete())
+		{
+			return tool_registration_outcome::no_handler_supplied;
+		}
+
 		render_coordinator* const render = &coordinator;
 
 		return registry.register_read_tool(
@@ -168,7 +188,11 @@ namespace sesh_ai::daw::tools
 				write_result = std::move(codec.write_render_result)](
 				const tool_execution_context<JsonValue>& context)
 				-> non_mutating_handler_result<JsonValue> {
-				if (!read_request || !write_result || context.call.validated_input == nullptr)
+				// Still checked here, because this one is a property of the call rather
+				// than of the build: a payload the extension could not read reaches the
+				// executor as no input at all, and that is a failed action the producer
+				// sees on this call, not a reason to have declined the tool.
+				if (context.call.validated_input == nullptr)
 				{
 					handler_action_outcomes outcomes;
 					outcomes.actions.push_back(failed_action(

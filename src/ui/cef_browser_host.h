@@ -34,15 +34,15 @@
 //     process; the difference is only which thread runs CEF's own loop.
 //
 // ---------------------------------------------------------------------------
-// Not verified by anything
+// Not exercised by the suite
 //
-// There is no CEF distribution on the development machine and none in the test target,
-// so nothing here is compiled or run by the suite. What is asserted about it lives in
-// `ui/ui_host.h` — the platform configuration, the URL rules, the teardown order, and
-// the escaping of a payload on its way into the page. This file is the translation
-// layer, and it is deliberately dull, because it is the one part of this component the
-// suite cannot reach. Treat every claim in it as unverified until the packaging work
-// builds against a real distribution.
+// The shared library compiles `cef_browser_host.cpp` against the pinned distribution,
+// but the test target has none, so nothing here is run by the suite. What is asserted
+// about it lives in `ui/ui_host.h` — the platform configuration, the URL rules, the
+// teardown order, and the escaping of a payload on its way into the page. This file is
+// the translation layer, and it is deliberately dull, because it is the one part of
+// this component the suite cannot reach. Treat what it does at run time as unverified
+// until checkpoint 28 opens the panel in REAPER.
 
 #ifndef SESH_AI_UI_CEF_BROWSER_HOST_H
 #define SESH_AI_UI_CEF_BROWSER_HOST_H
@@ -56,25 +56,51 @@
 namespace sesh_ai::ui {
 
 	// Where the runtime pieces of a CEF distribution were installed, alongside the
-	// extension binary. Filled in by the plugin entry from REAPER's resource path; kept
-	// as plain strings so this header stays free of any filesystem library.
+	// extension binary. Filled in by `entry::install_panel_browser_creator` from paths
+	// found beside the binary; kept as plain strings so this header stays free of any
+	// filesystem library.
 	struct CefRuntimeLayout {
-		// The helper the renderer, GPU, and utility processes run as. Joined from the
-		// installation directory and `CefPlatformConfiguration::subprocess_executable_name`.
+		// The helper the renderer, GPU, and utility processes run as, built by the
+		// `sesh_ai_cef_subprocess_helper` target. Joined from the extension binary's
+		// directory and `CefPlatformConfiguration::subprocess_executable_name` by
+		// `entry/cef_subprocess_helper_location.h`.
 		std::string subprocess_path;
 
+		// Resolved beside the binary by `entry/cef_framework_location.h`, which says why
+		// each is needed. The first on macOS and Windows, the other two on macOS only,
+		// and all three empty on Linux.
+		//
+		// The library CEF's functions come from, loaded before any other CEF call. On
+		// macOS the framework executable, `Chromium Embedded Framework.framework/Chromium
+		// Embedded Framework`, handed to `cef_load_library`. On Windows `libcef.dll`,
+		// handed to `load_cef_library_by_full_path` (`ui/cef_library_loading.h`).
+		std::string framework_library_path;
+
+		// macOS. The framework bundle itself, for CEF's `framework_dir_path`. Without it
+		// CEF looks inside REAPER's own bundle.
+		std::string framework_directory;
+
+		// The plain helper bundle, for CEF's `main_bundle_path`.
+		std::string main_bundle_path;
+
 		// CEF's `Resources` directory — `.pak` files and `icudtl.dat`. Left empty on
-		// macOS, where they are inside the framework bundle and CEF finds them itself.
+		// every platform. On macOS they are inside the framework bundle, which
+		// `framework_directory` names. On Windows and Linux CEF's default is the
+		// directory of the module it is built into, `libcef.dll` or `libcef.so`, and
+		// the build puts them beside it.
 		std::string resource_directory;
 
-		// CEF's `locales` directory. Empty on macOS for the same reason.
+		// CEF's `locales` directory. Empty for the same reasons.
 		std::string locales_directory;
 
 		// Where Chromium may write its cache. Under REAPER's own resource path, so an
 		// uninstall takes it with it.
 		std::string cache_path;
 
-		// Linux only: the setuid sandbox helper.
+		// Linux only: the setuid sandbox helper. Nothing reads it, because CEF has no
+		// setting for it: Chromium looks for `chrome-sandbox` beside the host
+		// executable, which is REAPER's, or at `CHROME_DEVEL_SANDBOX`. `CMakeLists.txt`
+		// records what that means for the install layout.
 		std::string sandbox_helper_path;
 	};
 
@@ -141,8 +167,10 @@ namespace sesh_ai::ui {
 		// disagree about it.
 		static const char* javascript_bridge_receive_function();
 
-		// The function the React application calls to send a message back. Registered as
-		// a CEF JavaScript binding on the renderer side.
+		// The function the React application calls to send a message back. Installed in
+		// the renderer by the helper's render process handler, in the main frame of the
+		// panel's own page only; `ui/renderer_bridge_binding.h` says how that is decided
+		// and why it is a process message rather than CEF's message router.
 		static const char* javascript_bridge_send_function();
 
 		// ------------------------------------------------------------------

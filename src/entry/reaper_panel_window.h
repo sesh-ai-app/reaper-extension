@@ -23,7 +23,8 @@ namespace sesh_ai::entry {
 	// this module's own list, which `SWELL_CreateDialog` is handed directly.
 	//
 	// The parent passed to `create_window` is REAPER's main window, `hwnd_main` in the
-	// registration table. Supplying it is the caller's job, task 25.2's.
+	// registration table, which `DockablePanel::open` is handed by the action hook in
+	// `entry/plugin_entry.cpp`.
 	PanelWindowPlatform make_reaper_panel_window_platform(void* module_instance);
 
 }
