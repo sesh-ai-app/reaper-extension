@@ -5,15 +5,12 @@
 // same arrangement as `entry/reaper_timer_registrar.cpp` for the REAPER SDK.
 //
 // ---------------------------------------------------------------------------
-// Unverified, and honest about it
+// Compiled, not exercised
 //
-// There is no CEF distribution on the development machine, `SESH_AI_DOWNLOAD_CEF` is off
-// by default because the archive is hundreds of megabytes, and the shared library target
-// is skipped when CEF is absent — so this file has not been compiled. It is written
-// against CEF's documented API at the version `CMakeLists.txt` pins
-// (154.0.28+g564dd6c+chromium-154.0.8037.58) and reviewed by hand, which is not the same
-// as compiled. The first thing that builds against a real distribution should expect to
-// correct details here, and nothing in the suite will notice if they are wrong.
+// The shared library always compiles this against the distribution `CMakeLists.txt`
+// pins (154.0.28+g564dd6c+chromium-154.0.8037.58), so the compiler holds it to CEF's
+// API at that version. Nothing in the suite runs it, and nothing will notice if what it
+// does at run time is wrong until checkpoint 28 opens the panel in REAPER.
 //
 // Everything about this component that *can* be held to a contract was put in
 // `ui/ui_host.h` for exactly that reason.
@@ -44,10 +41,14 @@
 
 #include <ui/cef_browser_host.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
+
+#include <ui/renderer_bridge_binding.h>
 
 #include <include/cef_app.h>
 #include <include/cef_browser.h>
@@ -63,17 +64,45 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+
+#include <ui/cef_library_loading.h>
 #endif
 
 namespace sesh_ai::ui {
 
 	namespace {
 
-		// The IPC message the renderer sends when the React application calls the bridge.
-		// The renderer half — a `CefRenderProcessHandler` registering the JavaScript
-		// binding — lives in the helper executable, which is a separate target (task
-		// 21.x). This is the name both halves agree on.
-		constexpr char message_from_javascript_ipc_name[] = "sesh_ai.message_from_javascript";
+		// The arguments of one process message from the renderer, in the shape
+		// `read_message_from_javascript` reads. The renderer half that writes them is the
+		// helper's (`ui/cef_subprocess_helper_main.cpp`), and the positions both halves use
+		// are `ui/renderer_bridge_binding.h`'s.
+		class process_message_argument_list_view {
+		public:
+			explicit process_message_argument_list_view(CefRefPtr<CefListValue> arguments)
+				: arguments_{std::move(arguments)}
+			{
+			}
+
+			std::size_t size() const
+			{
+				return arguments_.get() == nullptr ? 0 : arguments_->GetSize();
+			}
+
+			bool is_string(std::size_t index) const
+			{
+				return arguments_->GetType(index) == VTYPE_STRING;
+			}
+
+			std::string string_at(std::size_t index) const
+			{
+				// UTF-16 in CEF, UTF-8 from here on, which is what the JSON parser and the
+				// outbound queue expect.
+				return arguments_->GetString(index).ToString();
+			}
+
+		private:
+			CefRefPtr<CefListValue> arguments_;
+		};
 
 		// A task that runs an arbitrary callable on a CEF thread.
 		//
@@ -197,32 +226,53 @@ namespace sesh_ai::ui {
 				CefProcessId source_process,
 				CefRefPtr<CefProcessMessage> message) override
 			{
-				(void)browser;
-				(void)frame;
-
 				if (source_process != PID_RENDERER) {
 					return false;
+				}
+
+				// The frame is judged again here, from the browser's own view of it,
+				// rather than trusting that the renderer only bound the function where
+				// `ui/renderer_bridge_binding.h` says it should. The renderer is the less
+				// trusted of the two processes.
+				const std::string frame_url =
+					frame.get() == nullptr ? std::string{} : frame->GetURL().ToString();
+
+				BridgeFrameDescription frame_description;
+				frame_description.is_main_frame = frame.get() != nullptr && frame->IsMain();
+				frame_description.url = frame_url;
+
+				{
+					const std::lock_guard<std::mutex> lock{state_.mutex};
+					frame_description.belongs_to_panel_browser =
+						state_.browser.get() != nullptr && state_.browser->IsSame(browser);
 				}
 
 				// Converted rather than compared directly: `CefString`'s comparison
 				// overloads have moved around between CEF versions, and `ToString` has
 				// not.
-				if (message->GetName().ToString() != message_from_javascript_ipc_name) {
+				MessageFromJavascriptRead read = read_message_from_javascript(
+					message->GetName().ToString(),
+					frame_description,
+					process_message_argument_list_view{message->GetArgumentList()}
+				);
+
+				if (!read.consumed()) {
 					return false;
 				}
 
-				const CefRefPtr<CefListValue> arguments = message->GetArgumentList();
-
-				if (arguments == nullptr || arguments->GetSize() < 2) {
+				// Ours and refused. Nothing is queued: the renderer code this extension
+				// ships never sends one of these, so whatever did is not owed an answer.
+				if (!read.readable()) {
 					return true;
 				}
 
 				// Queued rather than handled. The handler reaches the Main-Thread
-				// Dispatcher, which calls the REAPER C API, and this is not REAPER's main
-				// thread (requirement 22.3).
+				// Dispatcher, and on Windows this is CEF's own thread rather than
+				// REAPER's main one (requirement 22.3). `pump_message_loop`, called from
+				// the timer tick, is what hands it over.
 				queued_message_from_javascript queued;
-				queued.message_name = arguments->GetString(0).ToString();
-				queued.serialized_json = arguments->GetString(1).ToString();
+				queued.message_name = std::move(read.message_name);
+				queued.serialized_json = std::move(read.serialized_json);
 
 				const std::lock_guard<std::mutex> lock{state_.mutex};
 				state_.messages_from_javascript.push_back(std::move(queued));
@@ -245,11 +295,11 @@ namespace sesh_ai::ui {
 		std::vector<queued_message_from_javascript> messages_from_javascript;
 
 #if defined(__APPLE__)
-		// The framework is loaded at runtime from inside the extension bundle, and the
-		// loader has to outlive every CEF call. A member rather than a local for that
-		// reason.
-		CefScopedLibraryLoader library_loader;
-		bool library_loaded = false;
+		// Whether `cef_load_library` succeeded, so the destructor knows whether there is
+		// anything to unload, and whether `CefInitialize` was ever reached, so it knows
+		// whether unloading is safe.
+		bool framework_loaded = false;
+		bool cef_initialize_called = false;
 #endif
 	};
 
@@ -271,6 +321,16 @@ namespace sesh_ai::ui {
 		// `ShutdownSequence` and to the plugin entry that drives it — not to whenever this
 		// object happens to be destroyed. A destructor that shut CEF down would make the
 		// ordering depend on declaration order in a file this component cannot see.
+
+#if defined(__APPLE__)
+		// The framework is unloaded only when CEF never started or was shut down
+		// cleanly. Unloading it under a running CEF, or after a `CefInitialize` that
+		// failed partway, could leave its threads executing unmapped code inside REAPER,
+		// so then it stays loaded until the process exits.
+		if (state_->framework_loaded && (!state_->cef_initialize_called || cef_shut_down_)) {
+			cef_unload_library();
+		}
+#endif
 	}
 
 	const char* CefPanelBrowserHost::javascript_bridge_receive_function()
@@ -280,7 +340,10 @@ namespace sesh_ai::ui {
 
 	const char* CefPanelBrowserHost::javascript_bridge_send_function()
 	{
-		return "seshAiBridgeSend";
+		// The renderer installs the function under this name, so it is read from the
+		// header both processes compile. `data()` is safe as a C string because the
+		// view was made from a literal.
+		return javascript_bridge_send_function_name.data();
 	}
 
 	bool CefPanelBrowserHost::cef_initialized() const
@@ -319,12 +382,48 @@ namespace sesh_ai::ui {
 		}
 
 #if defined(__APPLE__)
-		if (!state_->library_loader.LoadInMain()) {
-			failure_reason_ = "the chromium embedded framework could not be loaded";
+		// The framework is not linked, because a linked framework is looked for
+		// relative to REAPER's executable, and so is CefScopedLibraryLoader's
+		// `LoadInMain`. The path is resolved beside this binary instead
+		// (`entry/cef_framework_location.h`), and every CEF call below goes through the
+		// function pointers `cef_load_library` fills.
+		if (runtime_layout_.framework_library_path.empty()
+			|| runtime_layout_.framework_directory.empty()
+			|| runtime_layout_.main_bundle_path.empty()) {
+			failure_reason_ = "the cef framework and main bundle paths were not supplied";
 			return false;
 		}
 
-		state_->library_loaded = true;
+		if (!state_->framework_loaded) {
+			if (cef_load_library(runtime_layout_.framework_library_path.c_str()) == 0) {
+				failure_reason_ =
+					"the chromium embedded framework could not be loaded from '"
+					+ runtime_layout_.framework_library_path + "'";
+				return false;
+			}
+
+			state_->framework_loaded = true;
+		}
+#endif
+
+#if defined(_WIN32)
+		// `libcef.dll` is delay-loaded, because an import would be looked for in REAPER's
+		// search path. Loaded here by the path resolved beside this binary, before
+		// anything below: `CefSettings` and `CefString` call into it as well as
+		// `CefInitialize`, and a delay-load that cannot find it crashes REAPER rather than
+		// failing. `ui/cef_library_loading.h` has the rest.
+		if (runtime_layout_.framework_library_path.empty()) {
+			failure_reason_ = "the path to libcef.dll was not supplied";
+			return false;
+		}
+
+		const CefLibraryLoadOutcome cef_library_load =
+			load_cef_library_by_full_path(runtime_layout_.framework_library_path);
+
+		if (!cef_library_load.loaded) {
+			failure_reason_ = cef_library_load.failure_reason;
+			return false;
+		}
 #endif
 
 #if defined(_WIN32)
@@ -339,6 +438,16 @@ namespace sesh_ai::ui {
 		// There is no path here that sets `single_process`: that mode shares a process
 		// with REAPER, which is the arrangement those two requirements exist to rule out.
 		CefString(&settings.browser_subprocess_path).FromString(runtime_layout_.subprocess_path);
+
+#if defined(__APPLE__)
+		// Both deliberately. Without the first CEF looks for the framework, and so for
+		// its resources and locales, inside REAPER's bundle. Without the second the
+		// browser process and the helpers take different bundle identifiers and cannot
+		// find each other's Mach services. `entry/cef_framework_location.h` has the
+		// sources for both.
+		CefString(&settings.framework_dir_path).FromString(runtime_layout_.framework_directory);
+		CefString(&settings.main_bundle_path).FromString(runtime_layout_.main_bundle_path);
+#endif
 
 		if (!runtime_layout_.resource_directory.empty()) {
 			CefString(&settings.resources_dir_path).FromString(runtime_layout_.resource_directory);
@@ -368,11 +477,16 @@ namespace sesh_ai::ui {
 		// Deliberately off, even though pumping is what happens below. CEF's external
 		// message pump is the *optimised* form of this arrangement and it requires a
 		// `CefBrowserProcessHandler::OnScheduleMessagePumpWork` to tell the host when work
-		// is waiting — which means a `CefApp`, which belongs with the helper target that
-		// does not exist yet. Turning the flag on without the handler asks CEF to wait for
-		// a callback nothing will make. With it off, `CefDoMessageLoopWork` on a timer is
+		// is waiting — which means a browser-process `CefApp` passed to `CefInitialize`
+		// below, and none is. The helper's `CefApp` is the renderer's and cannot do this
+		// job. Turning the flag on without the handler asks CEF to wait for a callback
+		// nothing will make. With it off, `CefDoMessageLoopWork` on a timer is
 		// CEF's documented way to integrate with a loop the host already owns.
 		settings.external_message_pump = 0;
+#endif
+
+#if defined(__APPLE__)
+		state_->cef_initialize_called = true;
 #endif
 
 		if (!CefInitialize(main_args, settings, nullptr, nullptr)) {
@@ -427,12 +541,18 @@ namespace sesh_ai::ui {
 
 			CefBrowserSettings browser_settings;
 
+			// The marker the renderer reads in `OnBrowserCreated`, and the first of the
+			// three things that decide whether a frame gets `seshAiBridgeSend`
+			// (`ui/renderer_bridge_binding.h`). A popup is created without it.
+			CefRefPtr<CefDictionaryValue> extra_info = CefDictionaryValue::Create();
+			extra_info->SetBool(CefString{std::string{panel_browser_marker_key}}, true);
+
 			::CefBrowserHost::CreateBrowser(
 				window_info,
 				browser_client,
 				CefString{url},
 				browser_settings,
-				nullptr,
+				extra_info,
 				nullptr
 			);
 		});

@@ -607,7 +607,7 @@ TEST_CASE("the deferred browser host refuses until a browser is bound", "[bridge
 	const auto application_entry_point = build_local_asset_url("/opt/sesh-ai/ui", "index.html");
 	REQUIRE(application_entry_point.valid);
 
-	SECTION("a build with no CEF gets an unbound host and refuses rather than pretending")
+	SECTION("a panel with no creator gets an unbound host and refuses rather than pretending")
 	{
 		REQUIRE_FALSE(deferred_browser_host.is_bound());
 

@@ -33,30 +33,30 @@
 // "nothing routes yet". So an inbound envelope now reaches one of seven destinations,
 // all 42 tools are registered, and `load` writes the line that says how many.
 //
-// Two pieces of requirements 1.1 and 1.3 are still open, and both are about the window
-// rather than the graph:
+// Task 25.2 filled in the panel. The panel action runs `DockablePanel::open`
+// (`entry/dockable_panel.h`): it creates the window from the dialog resource task 25.1
+// added, docks it with `DockWindowAddEx` as a registration in the same set as everything
+// else, raises it with `DockWindowActivate`, and hands it to `PluginEntry::open_panel`.
+// The browser creator is installed at construction by `install_panel_browser_creator`
+// (`entry/panel_browser_creator.h`), over the two references on `ComposedExtension` and
+// the asset directory found beside this binary (`entry/panel_asset_directory.h`).
 //
-//   - **The panel window itself.** `DockWindowAddEx` takes an `HWND`. Task 25.1 built
-//     the way to get one: the dialog resource `entry/panel_window.rc`, the SWELL
-//     resource-generation step `CMakeLists.txt` runs on macOS and Linux, and
-//     `entry/panel_window.h` with `entry/reaper_panel_window.h` to create the window.
-//     Nothing here creates it yet. Doing that when the panel action fires, and passing
-//     the result to `register_panel_window`, is task 25.2. The registrar's half is
-//     complete and symmetric; the call into it is not.
+// What is still not wired is reported rather than faked:
 //
-//   - **The CEF-backed browser.** `entry/panel_browser_creator.h` declares
-//     `make_panel_browser_creator`, and `entry/cef_panel_browser_creator.cpp` —
-//     compiled only when a CEF distribution was located, exactly as
-//     `src/ui/cef_browser_host.cpp` is — is the one translation unit outside that file
-//     which names `CefPanelBrowserHost`. Both references it takes are now reachable, on
-//     `ComposedExtension`. What it still needs is the panel's `HWND` and the resolved
-//     asset directory, which arrive with the window above: task 25.2.
+//   - **A creator that is not installed** leaves the panel docked and empty.
+//     `open_panel` reports `no_browser_creator`, and the line written names what was
+//     missing. The two causes below are the ones a producer can meet.
+//   - **The CEF runtime layout** is looked for beside this binary: the helper executable
+//     (task 26.1) and, on macOS, the framework and the plain helper bundle as CEF's
+//     main bundle (task 26.2, `entry/cef_framework_location.h`). A missing piece drops
+//     the creator with a line naming the path, the same as missing assets. The cache
+//     path is task 27's and is still empty.
+//   - **Assets that are not beside the binary** — every development build — drop the
+//     creator, and the line names the path that was looked for.
 //
-// Neither is faked. `open_panel` reports `no_browser_creator` and the panel registration
-// is simply not taken, which is what the log says rather than something claiming to have
-// happened. The UI state publish step *is* wired, and publishes through the
-// `DeferredBrowserHost` — which reports that it has no browser rather than losing the
-// state, so the presenters' accumulation is correct the moment there is one.
+// The UI state publish step publishes through the `DeferredBrowserHost`, which reports
+// that it has no browser rather than losing the state, so the presenters' accumulation
+// is correct the moment there is one.
 
 #include <entry/plugin_entry.h>
 
@@ -67,9 +67,17 @@
 // there is nothing to eat. The same hazard is why nothing below this line calls either.
 // See `daw/tools/reaper_track_state_host.cpp`, where it was first hit, and
 // `reaper_sdk.h`, which is the only route to the SDK in this tree.
+#include <entry/cef_framework_location.h>
+#include <entry/cef_subprocess_helper_location.h>
 #include <entry/composed_extension.h>
+#include <entry/dockable_panel.h>
+#include <entry/extension_binary_location.h>
 #include <entry/extension_log.h>
 #include <entry/main_thread_dispatcher.h>
+#include <entry/panel_asset_directory.h>
+#include <entry/panel_browser_creator.h>
+#include <entry/panel_window.h>
+#include <entry/reaper_panel_window.h>
 #include <entry/reaper_timer_registrar.h>
 #include <entry/shutdown_sequence.h>
 #include <entry/timer_registration.h>
@@ -86,10 +94,19 @@
 
 namespace {
 
+	using sesh_ai::entry::ApplicationAssetDirectoryResolution;
+	using sesh_ai::entry::DockablePanel;
 	using sesh_ai::entry::ExtensionLog;
 	using sesh_ai::entry::ExtensionRegistrar;
 	using sesh_ai::entry::LoadReport;
 	using sesh_ai::entry::LogSeverity;
+	using sesh_ai::entry::PanelBrowserCreatorFactory;
+	using sesh_ai::entry::PanelBrowserInstallation;
+	using sesh_ai::entry::PanelBrowserSettings;
+	using sesh_ai::entry::PanelBrowserState;
+	using sesh_ai::entry::PanelOpeningReport;
+	using sesh_ai::entry::PanelWindow;
+	using sesh_ai::entry::PanelWindowDestructionOutcome;
 	using sesh_ai::entry::PluginEntry;
 	using sesh_ai::entry::RegistrationKind;
 	using sesh_ai::entry::RegistrationRequest;
@@ -306,9 +323,21 @@ namespace {
 
 		// Brings the panel to the front once it is docked. Not a registration, so it is
 		// not in the set.
+		//
+		// Shown first, because the panel's close box hides it rather than destroying it
+		// (`entry/reaper_panel_window.cpp`), and the action is how the producer gets it
+		// back. Then activated, which selects its tab when it is docked. Whether
+		// `DockWindowActivate` alone would re-show a hidden docked window is unverified
+		// here; showing it explicitly does not depend on the answer.
 		void activate_panel(HWND panel_window) const
 		{
-			if (dock_window_activate_ != nullptr && panel_window != nullptr) {
+			if (panel_window == nullptr) {
+				return;
+			}
+
+			ShowWindow(panel_window, SW_SHOW);
+
+			if (dock_window_activate_ != nullptr) {
 				dock_window_activate_(panel_window);
 			}
 		}
@@ -355,86 +384,44 @@ namespace {
 	// 1.2 rather than the mechanism: `shut_down` is what walks the five steps in order,
 	// and these destructors are what happens if something returned early before it got
 	// there. C++ destroys members in reverse declaration order, so reading the list
-	// bottom-up gives the teardown: the entry, then the timer registration (the timer
-	// stops), then the registrations REAPER holds, then the registrar, then the
-	// dispatcher, then the queues, and the log last of all — it is written to by the
-	// tick, by `load`, and by `shut_down`, so it has to outlive every one of them.
-	// Timer before queues, which is the constraint `entry/timer_registration.h`
-	// describes.
+	// bottom-up gives the teardown: the panel controller (which owns nothing), the
+	// entry, then the timer registration (the timer stops), then the registrations
+	// REAPER holds — the dock first, so the panel window leaves the docker here — then
+	// the registrar, the dispatcher, the graph, the CEF browser host, the panel window,
+	// the queues, and the log last of all — it is written to by the tick, by `load`, and
+	// by `shut_down`, so it has to outlive every one of them. Timer before queues, which
+	// is the constraint `entry/timer_registration.h` describes; dock before window and
+	// browser before window, which are `entry/dockable_panel.h`'s.
 	class LoadedExtension {
 	public:
-		explicit LoadedExtension(reaper_plugin_info_t* plugin_info)
+		// Everything is constructed in the initialiser list, in declaration order, so
+		// that `build_startup_plan` runs after the graph exists. It has to: the browser
+		// creator it installs is bound to the graph's UI Host, and installing it later
+		// would mean a creator slot that is empty at load and filled afterwards, which
+		// `PluginEntry::open_panel` could not tell apart from a build with no creator.
+		LoadedExtension(void* module_instance, reaper_plugin_info_t* plugin_info)
 			: plugin_info_{plugin_info},
 			log_{&write_log_line_to_standard_error},
 			tick_log_{log_},
 			queues_{std::make_unique<Queues>()},
+			panel_window_{sesh_ai::entry::make_reaper_panel_window_platform(module_instance)},
+			composed_{compose(plugin_info)},
+			dispatcher_{build_dispatcher()},
 			registrar_{plugin_info},
 			registrations_{registrar_},
 			timer_registrar_{plugin_info},
 			timer_registration_{timer_registrar_},
-			entry_{registrations_, build_startup_plan(), build_teardown_steps()}
+			entry_{registrations_, build_startup_plan(module_instance), build_teardown_steps()},
+			panel_{
+				panel_window_,
+				registrations_,
+				entry_,
+				[this](void* panel_window) {
+					registrar_.activate_panel(static_cast<HWND>(panel_window));
+				},
+				panel_display_name
+			}
 		{
-			// The graph, before the dispatcher that routes into it.
-			//
-			// `request_ui_state_publication` is the one edge that runs the other way:
-			// the Transport Client presents a connection status from the network thread
-			// and the publish has to reach the tick (requirement 2.3). The dispatcher
-			// does not exist yet, so the callable finds it through this object the same
-			// way the tick does — and `request_ui_state_publication` is documented safe
-			// from any thread, which is the property that makes a lambda here correct
-			// rather than convenient.
-			composed_ = sesh_ai::entry::compose_extension(
-				sesh_ai::entry::ComposedExtensionDependencies{
-					plugin_info,
-					&queues_->outbound(),
-					[this] {
-						if (dispatcher_ != nullptr) {
-							dispatcher_->request_ui_state_publication();
-						}
-					}
-				}
-			);
-
-			dispatcher_ = std::make_unique<Dispatcher>(
-				*queues_,
-
-				// The Message Dispatcher's slot (requirement 2.4), filled.
-				//
-				// Task 24.3's deliverable. Before it, this was a default-constructed
-				// router that the Main-Thread Dispatcher read as "nothing routes yet"
-				// and answered by leaving the inbound queue alone — because the graph
-				// could be built but had nothing to give its Tool Executor, so all 42
-				// tools were unregistered and a filled slot would have been an extension
-				// that looked like it worked and refused everything.
-				//
-				// `bind_envelope_router` is the adapter between the slot's
-				// `void(InboundEnvelope)` and the Message Dispatcher's `RoutingOutcome`,
-				// and it is also where requirement 5.8's line is written: an envelope
-				// type this build has no route for is logged once and ignored, because
-				// the server's protocol may be a version ahead.
-				//
-				// An empty handle keeps the old behaviour rather than crashing on load,
-				// and `load` writes the line that says so.
-				composed_ == nullptr
-					? Dispatcher::EnvelopeRouter{}
-					: sesh_ai::entry::bind_envelope_router<sesh_ai::transport::InboundEnvelope>(
-						composed_->message_dispatcher(),
-						log_
-					),
-
-				// The handoff to the network thread, which arrives with the Transport
-				// Client.
-				Dispatcher::OutboundEnvelopeSender{},
-
-				// Publishing to CEF, inside the tick and nowhere else (requirement 2.3).
-				// A turn's forty stream deltas are one repaint because the presenters
-				// accumulate and this step takes — so it is wired now even though the
-				// browser is not, and publishes through the `DeferredBrowserHost`, which
-				// reports that it has no browser rather than dropping the state.
-				composed_ == nullptr
-					? Dispatcher::UiStatePublisher{}
-					: composed_->ui_state_publisher()
-			);
 		}
 
 		LoadedExtension(const LoadedExtension&) = delete;
@@ -479,44 +466,31 @@ namespace {
 
 		// What `hookcommand` runs. True when this extension handled the action, which
 		// stops REAPER passing it on.
+		//
+		// The action hook is one of REAPER's own UI callbacks, so the REAPER calls the
+		// panel needs — `DockWindowAddEx`, `DockWindowActivate` — are legal here under
+		// requirement 22.3 without waiting for a tick.
 		bool run_action(int command_id)
 		{
 			if (show_panel_command_id_ == 0 || command_id != show_panel_command_id_) {
 				return false;
 			}
 
-			// Nothing creates the panel window yet — see the file comment. Task 25.2
-			// creates it here through `entry/panel_window.h`, after which this shows it
-			// and `open_panel` creates the browser inside it.
-			if (panel_window_ == nullptr) {
-				return true;
-			}
+			// REAPER's main window parents the panel. The registration table carries it
+			// and stays valid for as long as the extension is loaded.
+			void* const reaper_main_window =
+				plugin_info_ == nullptr ? nullptr : static_cast<void*>(plugin_info_->hwnd_main);
 
-			registrar_.activate_panel(panel_window_);
-			entry_.open_panel(panel_window_);
+			const PanelOpeningReport report = panel_.open(reaper_main_window);
 
-			return true;
-		}
-
-		// Called by the panel window's creation, once there is one. Takes the panel
-		// registration into the same set everything else is in, so it is released by the
-		// same `release_all`.
-		bool register_panel_window(HWND panel_window)
-		{
-			if (panel_window == nullptr || panel_window_ != nullptr) {
-				return false;
-			}
-
-			RegistrationRequest panel_registration;
-			panel_registration.kind = RegistrationKind::dockable_panel;
-			panel_registration.payload = panel_window;
-			panel_registration.description = panel_display_name;
-
-			if (!registrations_.add(panel_registration)) {
-				return false;
-			}
-
-			panel_window_ = panel_window;
+			sesh_ai::entry::write_panel_opening_lines(
+				report,
+				browser_unavailable_reason_,
+				panel_browser_state_ == nullptr
+					? std::string_view{}
+					: std::string_view{panel_browser_state_->last_failure_reason},
+				log_
+			);
 
 			return true;
 		}
@@ -524,6 +498,73 @@ namespace {
 		int show_panel_command_id() const { return show_panel_command_id_; }
 
 	private:
+		// The graph, before the dispatcher that routes into it.
+		//
+		// `request_ui_state_publication` is the one edge that runs the other way: the
+		// Transport Client presents a connection status from the network thread and the
+		// publish has to reach the tick (requirement 2.3). The dispatcher does not exist
+		// yet, so the callable finds it through this object the same way the tick does —
+		// and `request_ui_state_publication` is documented safe from any thread, which is
+		// the property that makes a lambda here correct rather than convenient.
+		std::unique_ptr<sesh_ai::entry::ComposedExtension> compose(reaper_plugin_info_t* plugin_info)
+		{
+			return sesh_ai::entry::compose_extension(
+				sesh_ai::entry::ComposedExtensionDependencies{
+					plugin_info,
+					&queues_->outbound(),
+					[this] {
+						if (dispatcher_ != nullptr) {
+							dispatcher_->request_ui_state_publication();
+						}
+					}
+				}
+			);
+		}
+
+		std::unique_ptr<Dispatcher> build_dispatcher()
+		{
+			return std::make_unique<Dispatcher>(
+				*queues_,
+
+				// The Message Dispatcher's slot (requirement 2.4), filled.
+				//
+				// Task 24.3's deliverable. Before it, this was a default-constructed
+				// router that the Main-Thread Dispatcher read as "nothing routes yet"
+				// and answered by leaving the inbound queue alone — because the graph
+				// could be built but had nothing to give its Tool Executor, so all 42
+				// tools were unregistered and a filled slot would have been an extension
+				// that looked like it worked and refused everything.
+				//
+				// `bind_envelope_router` is the adapter between the slot's
+				// `void(InboundEnvelope)` and the Message Dispatcher's `RoutingOutcome`,
+				// and it is also where requirement 5.8's line is written: an envelope
+				// type this build has no route for is logged once and ignored, because
+				// the server's protocol may be a version ahead.
+				//
+				// An empty handle keeps the old behaviour rather than crashing on load,
+				// and `load` writes the line that says so.
+				composed_ == nullptr
+					? Dispatcher::EnvelopeRouter{}
+					: sesh_ai::entry::bind_envelope_router<sesh_ai::transport::InboundEnvelope>(
+						composed_->message_dispatcher(),
+						log_
+					),
+
+				// The handoff to the network thread, which arrives with the Transport
+				// Client.
+				Dispatcher::OutboundEnvelopeSender{},
+
+				// Publishing to CEF, inside the tick and nowhere else (requirement 2.3).
+				// A turn's forty stream deltas are one repaint because the presenters
+				// accumulate and this step takes — so it is wired now even though the
+				// browser is not, and publishes through the `DeferredBrowserHost`, which
+				// reports that it has no browser rather than dropping the state.
+				composed_ == nullptr
+					? Dispatcher::UiStatePublisher{}
+					: composed_->ui_state_publisher()
+			);
+		}
+
 		// What the Tool Executor's registry ended up holding, as one line at load.
 		//
 		// This is the line task 24 exists to make possible. The registry declines a name
@@ -582,7 +623,7 @@ namespace {
 			log_.write(LogSeverity::warning, line);
 		}
 
-		StartupPlan build_startup_plan()
+		StartupPlan build_startup_plan(void* module_instance)
 		{
 			StartupPlan plan;
 
@@ -618,8 +659,8 @@ namespace {
 
 			// The dockable panel is deliberately not here. It needs an `HWND`, which is
 			// created when the panel action fires rather than at load —
-			// `register_panel_window` takes it into the same set then. Task 25.1 built
-			// the window; 25.2 creates and docks it. See the file comment.
+			// `DockablePanel::open` takes it into the same set then, so it is the last
+			// registration taken and the first released.
 
 			plan.start_timer = [this] {
 				// The tick. One of these is the only legal window in the extension for a
@@ -628,6 +669,24 @@ namespace {
 				return timer_registration_.start([this] {
 					if (dispatcher_ != nullptr) {
 						const TickReport report = dispatcher_->tick();
+
+						// Then CEF's turn, inside the same timer callback. This hands the
+						// messages the producer sent from the panel to the UI Host and on
+						// to the bridge parser, here on the main thread and never on a CEF
+						// thread (requirement 22.3). The messages wait in
+						// `CefPanelBrowserHost`'s hand-off from the CEF UI thread, which is
+						// not one of the two queues; the prompt it carries reaches the
+						// outbound queue from here and leaves on the next tick.
+						//
+						// After the dispatcher rather than before it, and skipped when the
+						// dispatcher declined a re-entrant tick: a REAPER call that pumps
+						// the message loop mid-tick must not have a confirmation decision
+						// answered underneath a tool call that is still running.
+						if (!report.reentrant_tick_skipped
+							&& panel_browser_state_ != nullptr
+							&& panel_browser_state_->pump_browser_message_loop) {
+							panel_browser_state_->pump_browser_message_loop();
+						}
 
 						// Returned rather than logged by the dispatcher, because this is
 						// the component that knows how this build reports things. What it
@@ -642,19 +701,77 @@ namespace {
 				});
 			};
 
-			// `create_panel_browser` is left unset, and what is missing has narrowed to
-			// one thing. `make_panel_browser_creator` — behind
-			// `entry/panel_browser_creator.h`, defined in the one translation unit
-			// `CMakeLists.txt` lets need CEF — takes the UI Host and the deferred
-			// browser host, and both are now reachable on `composed_`. What it also
-			// takes is `PanelBrowserSettings`: the directory Vite's output was installed
-			// into, and the CEF runtime layout. Resolving those needs REAPER's resource
-			// path and the window they are rendered into, which is task 25.2's.
-			//
-			// So `open_panel` reports `no_browser_creator`, which is the honest answer
-			// rather than a creator that would be handed a null window.
+			plan.create_panel_browser = build_panel_browser_creator(module_instance);
 
 			return plan;
+		}
+
+		// The creator `PluginEntry::open_panel` hands the panel window to, or nothing and
+		// the reason why — kept for the line written when the panel opens empty.
+		//
+		// Resolved here, at load, because the startup plan is fixed once the entry is
+		// constructed. Finding the assets is a `dladdr` or `GetModuleFileNameW` and one
+		// file-existence check, and no REAPER call.
+		//
+		// The CEF subprocess helper is found beside the binary too, under the name the
+		// platform configuration gives it (`entry/cef_subprocess_helper_location.h`), and
+		// so are the framework and the main bundle on macOS and `libcef.dll` on Windows
+		// (`entry/cef_framework_location.h`). Three more file-existence checks at most.
+		// The cache path is task 27's and is left empty until then.
+		sesh_ai::entry::PanelBrowserCreator build_panel_browser_creator(void* module_instance)
+		{
+			const std::string extension_binary_path =
+				sesh_ai::entry::locate_extension_binary(module_instance);
+
+			const sesh_ai::ui::CefPlatformConfiguration platform_configuration =
+				sesh_ai::ui::cef_platform_configuration_for(sesh_ai::ui::current_host_platform());
+
+			const ApplicationAssetDirectoryResolution application_assets =
+				sesh_ai::entry::resolve_application_asset_directory(
+					extension_binary_path,
+					&sesh_ai::entry::regular_file_exists
+				);
+
+			const sesh_ai::entry::CefSubprocessHelperResolution subprocess_helper =
+				sesh_ai::entry::resolve_cef_subprocess_helper(
+					extension_binary_path,
+					platform_configuration.subprocess_executable_name,
+					&sesh_ai::entry::regular_file_exists
+				);
+
+			const sesh_ai::entry::CefFrameworkResolution framework =
+				sesh_ai::entry::resolve_cef_library(
+					extension_binary_path,
+					platform_configuration,
+					&sesh_ai::entry::regular_file_exists
+				);
+
+			// Bound to the graph, which outlives every call: the creator is only reached
+			// through `open_panel`, which refuses once teardown has begun, and the graph
+			// is destroyed at teardown step three.
+			PanelBrowserCreatorFactory make_creator;
+
+			if (composed_ != nullptr) {
+				make_creator = [this](const PanelBrowserSettings& settings) {
+					return sesh_ai::entry::make_panel_browser_creator(
+						composed_->ui_host(),
+						composed_->deferred_browser_host(),
+						settings
+					);
+				};
+			}
+
+			PanelBrowserInstallation installation = sesh_ai::entry::install_panel_browser_creator(
+				application_assets,
+				subprocess_helper,
+				framework,
+				make_creator
+			);
+
+			panel_browser_state_ = installation.state;
+			browser_unavailable_reason_ = std::move(installation.unavailable_reason);
+
+			return std::move(installation.creator);
 		}
 
 		TeardownSteps build_teardown_steps()
@@ -706,6 +823,16 @@ namespace {
 				// Its queue reference has been dead since step two — see there.
 				composed_.reset();
 
+				// Then the CEF-backed host the creator made, now that the deferred host
+				// that pointed at it has gone with the graph. Its browser was closed and
+				// CEF shut down inside `UiHost::shut_down`, while the panel window it is
+				// a child of still existed — the window outlives this step on purpose.
+				if (panel_browser_state_ != nullptr) {
+					// The pump first: it points at the host about to go.
+					panel_browser_state_->pump_browser_message_loop = nullptr;
+					panel_browser_state_->browser_host.reset();
+				}
+
 				return outcome.cef_shut_down || outcome.already_shut_down;
 			};
 
@@ -713,6 +840,27 @@ namespace {
 			// as a step with nothing to tear down rather than as a step that failed. The
 			// distinction matters: a socket that refused to close must stop the teardown
 			// and a socket that does not exist must not.
+
+			// Five ends with the panel window. `PluginEntry` calls this after
+			// `release_all`, whose first release is the dock — so by now the window has
+			// left REAPER's docker, and since step three there is no browser in it.
+			// `destroy_window` checks both rather than trusting this ordering, and a
+			// refusal stops here with the window left to its destructor.
+			teardown.on_exit = [this] {
+				const PanelWindowDestructionOutcome outcome = panel_.destroy_window();
+
+				if (outcome == PanelWindowDestructionOutcome::destroyed
+					|| outcome == PanelWindowDestructionOutcome::no_window) {
+					return true;
+				}
+
+				log_.write(
+					LogSeverity::warning,
+					sesh_ai::entry::describe_panel_window_destruction_outcome(outcome)
+				);
+
+				return false;
+			};
 
 			return teardown;
 		}
@@ -769,7 +917,11 @@ namespace {
 		reaper_plugin_info_t* plugin_info_ = nullptr;
 		gaccel_register_t show_panel_action_{};
 		int show_panel_command_id_ = 0;
-		HWND panel_window_ = nullptr;
+
+		// Written by `build_panel_browser_creator` from inside `entry_`'s initialiser,
+		// so it has to be constructed before `entry_` is — up here with the rest of
+		// the plain data.
+		std::string browser_unavailable_reason_;
 
 		// Before everything below, so it is destroyed after all of it. The tick writes
 		// to it, `load` writes to it, and `shut_down` writes to it — the last of those
@@ -785,6 +937,20 @@ namespace {
 		// and that order is requirement 1.2's.
 		std::unique_ptr<Queues> queues_;
 
+		// The panel's native window, destroyed after everything that could still reach
+		// it: the dock registration in `registrations_` below, the graph whose UI Host
+		// drives the browser, and the CEF-backed browser host that is the window's
+		// child. On the explicit path `DockablePanel::destroy_window` has already done it
+		// at the end of step five; this position is the backstop.
+		PanelWindow panel_window_;
+
+		// What the browser creator put the CEF-backed host into, shared with the creator
+		// inside `entry_`. Default-constructed here and filled from inside `entry_`'s
+		// initialiser, which is why it is declared before the graph rather than after:
+		// destroyed after the graph, so the deferred browser host never holds a pointer
+		// to a host that has already gone, and before the window the browser is in.
+		std::shared_ptr<PanelBrowserState> panel_browser_state_;
+
 		// Between the queues and the dispatcher, which is both constraints at once: the
 		// graph holds the outbound queue by reference, so the queues must be constructed
 		// first and destroyed last of the three; and the dispatcher's router is bound
@@ -798,6 +964,10 @@ namespace {
 		ReaperTimerRegistrar timer_registrar_;
 		TimerRegistration timer_registration_;
 		PluginEntry entry_;
+
+		// Last, because it holds references to the window, the registration set, and the
+		// entry, and owns nothing of its own.
+		DockablePanel panel_;
 	};
 
 }
@@ -820,11 +990,6 @@ extern "C" {
 		REAPER_PLUGIN_HINSTANCE instance,
 		reaper_plugin_info_t* plugin_info)
 	{
-		// The module handle is REAPER's to keep. Nothing here uses it yet. On Windows
-		// it is where the dialog resource lives, and task 25.2 passes it to
-		// `make_reaper_panel_window_platform` (`entry/reaper_panel_window.h`).
-		(void)instance;
-
 		// REAPER calls this through a C function pointer. An exception unwinding across
 		// that boundary is undefined behaviour, and on load it would be a crash before
 		// the producer has seen anything at all.
@@ -858,7 +1023,13 @@ extern "C" {
 				return sesh_ai::entry::reaper_plugin_entry_result(false);
 			}
 
-			auto extension = std::make_unique<LoadedExtension>(plugin_info);
+			// The module handle is where the dialog resource lives on Windows, and what
+			// `GetModuleFileNameW` is asked about to find the panel's assets. On macOS
+			// and Linux neither use reads it.
+			auto extension = std::make_unique<LoadedExtension>(
+				static_cast<void*>(instance),
+				plugin_info
+			);
 
 			// Set before `load`, because the registrations `load` takes are callbacks
 			// REAPER may invoke the moment it holds them, and each one finds the

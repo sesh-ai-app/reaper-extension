@@ -25,21 +25,17 @@
 # ---------------------------------------------------------------------------
 # What this has NOT been shown to do
 #
-# No part of this has run. Beyond that, two things are known to be incomplete and
-# are not hidden by the workflow succeeding:
+# This workflow has never run; the first tag push is its first execution. Its
+# parts have been exercised elsewhere, and only partly:
 #
-#   - The CEF branch of `CMakeLists.txt` has never been exercised. There is no CEF
-#     distribution on any development machine, so `-DSESH_AI_REQUIRE_CEF=ON`
-#     below is the first thing that will ever compile
-#     `src/ui/cef_browser_host.cpp` and `src/entry/cef_panel_browser_creator.cpp`.
-#     Expect the first tag push to fail here.
-#   - The panel window does not exist, and neither does the CEF subprocess
-#     helper. `DockWindowAddEx` needs a dialog resource plus the SWELL
-#     resource-generation step on macOS and Linux, and `CefRuntimeLayout`
-#     wants a `subprocess_path` pointing at a helper executable that has no
-#     CMake target. So the archive this builds installs and loads, and the
-#     panel reports that it has no browser. It is a releasable build of what
-#     exists, not a working UI.
+#   - Configure, build and test with CEF run on all four legs in `ci.yml`, so
+#     those steps are the least likely to fail here.
+#   - The staging sequence (`cmake --install` into an empty directory, the
+#     macOS signature check, the archive) was run locally on macOS x86_64
+#     only. The Windows and Linux install trees, and both archive formats on
+#     those runners, have not been produced anywhere.
+#   - Nobody has loaded an archive this builds into REAPER. That is spec task
+#     28, and a green run here says nothing about it.
 #
 # ---------------------------------------------------------------------------
 # Every runner label is explicit
@@ -60,16 +56,16 @@
 # is the one failure mode a release workflow has no excuse for.
 #
 # ---------------------------------------------------------------------------
-# Packaging lives here rather than in CMake, for now
+# The install layout belongs to CMake, not to this workflow
 #
-# `CMakeLists.txt` has no `install()` rules, so the staging below is the only
-# description of the install layout. `sesh_ai_ui/` is attested —
-# `tests/ui/ui_host_test.cpp` builds its `file://` URLs over
-# `UserPlugins/sesh_ai_ui` — but `sesh_ai_cef/` is this workflow's choice, since
-# nothing yet resolves `CefRuntimeLayout`'s paths. Moving all of it into
-# `install()` plus CPack is the right end state and is deliberately not done
-# here: it is a `CMakeLists.txt` change, and this task is three files under
-# `.github/`.
+# The archive is whatever `cmake --install` produces. The "Install rules"
+# section of `CMakeLists.txt` decides what ships and where: the extension
+# binary, the CEF runtime and helpers beside it where the extension's resolvers
+# look, `sesh_ai_ui/`, the trimmed locales, and the notices in
+# `sesh_ai_licenses/`. This workflow adds only what has no build equivalent: the
+# floor check before staging, a signature check on the staged macOS bundles,
+# and the archive itself. A layout question is answered in `CMakeLists.txt`, and
+# a developer can reproduce the tree with the same command.
 
 name: Release
 
@@ -219,7 +215,6 @@ jobs:
           # was correct a year ago is not a guide.
           - platform_id: macos-arm64
             runner: macos-15
-            library_extension: dylib
             vcpkg_triplet: arm64-osx
             archive_format: tar.gz
             # Pinned so the CEF platform selection in `CMakeLists.txt` reads an
@@ -245,7 +240,6 @@ jobs:
           # suite* on the architecture it ships.
           - platform_id: macos-x64
             runner: macos-15-intel
-            library_extension: dylib
             vcpkg_triplet: x64-osx
             archive_format: tar.gz
             extra_cmake_arguments: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
@@ -260,7 +254,6 @@ jobs:
           # DEPENDENCIES.md.
           - platform_id: windows-x64
             runner: windows-2025
-            library_extension: dll
             # `-static-md` rather than the default `x64-windows`: static vcpkg
             # libraries against the dynamic CRT. The default would make
             # json-schema-validator a DLL the extension has to ship beside
@@ -292,7 +285,6 @@ jobs:
           # question by not asking it.
           - platform_id: linux-x64
             runner: ubuntu-22.04
-            library_extension: so
             vcpkg_triplet: x64-linux
             archive_format: tar.gz
             extra_cmake_arguments: ""
@@ -337,7 +329,8 @@ jobs:
         run: npm ci
 
       # Produces `ui/dist`, which is what the panel loads over `file://`. Runs
-      # before the CMake build because the staging step copies its output.
+      # before the CMake build because the install rules read it from there and
+      # stop the install when it is missing.
       - name: Build the UI
         working-directory: ui
         run: npm run build
@@ -358,10 +351,12 @@ jobs:
             "${RUNNER_TEMP}/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
           fi
 
-      # Every `REQUIRE` option is on. Configuration is willing to skip CEF, the
-      # REAPER SDK, and the shared library itself on a developer machine; a
-      # release build that quietly dropped any of them would produce an archive
-      # with nothing in it. DEPENDENCIES.md calls this exact combination out.
+      # Every `REQUIRE` option is on. Configuration is willing to skip the REAPER
+      # SDK and the shared library itself on a developer machine; a release build
+      # that quietly dropped either would produce an archive with nothing in it.
+      # CEF needs no option: the download is on by default, and a library that
+      # cannot get CEF stops configuration. DEPENDENCIES.md calls this exact
+      # combination out.
       - name: Configure
         run: |
           set -euo pipefail
@@ -370,7 +365,6 @@ jobs:
             -DSESH_AI_VCPKG_ROOT="${RUNNER_TEMP}/vcpkg" \
             -DVCPKG_TARGET_TRIPLET="${{ matrix.vcpkg_triplet }}" \
             -DSESH_AI_DOWNLOAD_REAPER_SDK=ON -DSESH_AI_REQUIRE_REAPER_SDK=ON \
-            -DSESH_AI_DOWNLOAD_CEF=ON -DSESH_AI_REQUIRE_CEF=ON \
             -DSESH_AI_REQUIRE_EXTENSION_LIBRARY=ON \
             ${{ matrix.extra_cmake_arguments }}
 
@@ -408,104 +402,99 @@ jobs:
       # archive and no upload. Skipped on Windows, where the floor is
       # `_WIN32_WINNT` and nothing in the binary restates it.
       #
-      # Unverified — no development machine here has a CEF distribution, so the
-      # first tag push is the first real exercise of it.
+      # The same script runs on `ci.yml`'s macOS and Linux legs on every push,
+      # so it is exercised there; here it guards the binaries that ship.
       - name: Check CEF against the declared platform floor
         if: runner.os != 'Windows'
         run: ./scripts/check-cef-platform-floor.sh
 
       # ---------------------------------------------------------------------
-      # Stage the install layout.
+      # Stage the install layout, check it, and archive it.
       #
-      # Paths are globbed rather than constructed. `CMakeLists.txt` owns the CEF
-      # version string and the output directory layout, and a multi-config
-      # generator appends `Release/` to the latter — so asking the filesystem
-      # what was produced is both shorter and harder to get quietly wrong than
-      # duplicating either rule here.
+      # `cmake --install` lays the tree out, from the "Install rules" section of
+      # `CMakeLists.txt`. `--config Release` is for the multi-config generator on
+      # Windows and is ignored elsewhere. The install itself stops when
+      # `ui/dist` or a linked library's notice is missing, so neither is checked
+      # again here.
+      #
+      # Into a directory that did not exist before this step. An install into a
+      # reused prefix keeps whatever an earlier install put there, Vite's
+      # previously hashed asset files among it, and an archive has to hold
+      # exactly one build. `mkdir` without `-p` enforces that, because it fails
+      # when the directory is already there.
       # ---------------------------------------------------------------------
       - name: Stage the package
         id: stage
         env:
           PLATFORM_ID: ${{ matrix.platform_id }}
-          LIBRARY_EXTENSION: ${{ matrix.library_extension }}
+          ARCHIVE_FORMAT: ${{ matrix.archive_format }}
         run: |
           set -euo pipefail
 
-          # `find | wc -l` rather than an array, because the macOS runner's
-          # /bin/bash is 3.2 and has no `mapfile`.
-          count_matches() {
-            find "$@" | wc -l | tr -d '[:space:]'
-          }
-
           package_name="sesh-ai-reaper-extension-${GITHUB_REF_NAME}-${PLATFORM_ID}"
-          staging="${RUNNER_TEMP}/staging/${package_name}"
-          mkdir -p "${staging}"
+          staging_parent="${RUNNER_TEMP}/staging"
+          staging="${staging_parent}/${package_name}"
 
-          # The extension REAPER loads. One file, and exactly one — more than one
-          # match means the output directory rules changed and the rest of this
-          # step is reasoning about the wrong tree.
-          library_matches="$(count_matches build/bin -type f -name "reaper_sesh_ai.${LIBRARY_EXTENSION}")"
+          mkdir "${staging_parent}"
+          mkdir "${staging}"
 
-          if [ "${library_matches}" -ne 1 ]; then
-            echo "::error::expected exactly one reaper_sesh_ai.${LIBRARY_EXTENSION} under build/bin, found ${library_matches}."
-            find build/bin -type f -name "reaper_sesh_ai.*" || true
-            exit 1
-          fi
+          cmake --install build --config Release --prefix "${staging}"
 
-          library_path="$(find build/bin -type f -name "reaper_sesh_ai.${LIBRARY_EXTENSION}" | head -n 1)"
-          cp "${library_path}" "${staging}/"
+          # The build signed the framework and the five helper bundles, and the
+          # install rules copy them without changing a byte. This checks that on
+          # the tree that ships, since a broken seal is a panel that never opens
+          # and nothing earlier in the job would notice. The count is checked too:
+          # a glob that matched nothing would otherwise verify nothing and pass.
+          # A for loop over globs rather than `find | while`, which keeps the
+          # count in this shell and works in the macOS runner's bash 3.2.
+          if [ "${RUNNER_OS}" = "macOS" ]; then
+            expected_bundle_count=6
+            verified_bundle_count=0
 
-          # The Vite output. `sesh_ai_ui/` is the directory name
-          # `tests/ui/ui_host_test.cpp` builds its `file://` URLs over.
-          mkdir -p "${staging}/sesh_ai_ui"
-          cp -R ui/dist/. "${staging}/sesh_ai_ui/"
+            for bundle in "${staging}"/*.framework "${staging}"/*.app; do
+              if [ ! -e "${bundle}" ]; then
+                continue
+              fi
 
-          # The CEF runtime. `CMakeLists.txt` extracted the distribution into
-          # third_party/cef — glob for it rather than rebuilding the version
-          # string, which carries '+' characters and is pinned in one place.
-          cef_matches="$(count_matches third_party/cef -maxdepth 1 -type d -name "cef_binary_*_minimal")"
+              codesign --verify --deep --strict "${bundle}"
+              echo "Signature intact: ${bundle#"${staging}/"}"
+              verified_bundle_count=$((verified_bundle_count + 1))
+            done
 
-          if [ "${cef_matches}" -ne 1 ]; then
-            echo "::error::expected exactly one extracted CEF distribution under third_party/cef, found ${cef_matches}."
-            find third_party/cef -maxdepth 1 -type d || true
-            exit 1
-          fi
-
-          cef_root="$(find third_party/cef -maxdepth 1 -type d -name "cef_binary_*_minimal" | head -n 1)"
-
-          # Copied wholesale. Trimming unused locales and the Windows import
-          # library is a real saving and a packaging refinement; shipping too
-          # much is recoverable, shipping too little is a panel that does not
-          # open. On macOS the resources live inside the framework bundle, which
-          # is why there is no Resources directory to copy there.
-          mkdir -p "${staging}/sesh_ai_cef"
-          cp -R "${cef_root}/Release/." "${staging}/sesh_ai_cef/"
-
-          if [ -d "${cef_root}/Resources" ]; then
-            cp -R "${cef_root}/Resources/." "${staging}/sesh_ai_cef/"
-          fi
-
-          # Chromium's notices have to travel with the binaries — DEPENDENCIES.md
-          # is explicit that both of these ship to producers.
-          for notice in LICENSE.txt CREDITS.html; do
-            if [ -f "${cef_root}/${notice}" ]; then
-              cp "${cef_root}/${notice}" "${staging}/sesh_ai_cef/${notice}"
+            if [ "${verified_bundle_count}" -ne "${expected_bundle_count}" ]; then
+              echo "::error::expected ${expected_bundle_count} signed bundles in the staged tree" \
+                   "(Chromium Embedded Framework.framework and five Sesh AI Helper apps), verified" \
+                   "${verified_bundle_count}. Either the install rules changed what they install," \
+                   "or CEF's helper list changed and this count has to follow it."
+              ls -la "${staging}"
+              exit 1
             fi
-          done
-
-          cp LICENSE SECURITY.md DEPENDENCIES.md "${staging}/"
+          fi
 
           # Archive from the staging parent so the tree unpacks into its own
           # directory rather than over whatever the producer extracted it into.
-          cd "${RUNNER_TEMP}/staging"
+          cd "${staging_parent}"
+          package_path="${RUNNER_TEMP}/${package_name}.${ARCHIVE_FORMAT}"
 
-          if [ "${{ matrix.archive_format }}" = "zip" ]; then
-            7z a -tzip -bso0 "${RUNNER_TEMP}/${package_name}.zip" "${package_name}"
+          if [ "${ARCHIVE_FORMAT}" = "zip" ]; then
+            7z a -tzip -bso0 "${package_path}" "${package_name}"
           else
-            tar --create --gzip --file "${RUNNER_TEMP}/${package_name}.tar.gz" "${package_name}"
+            tar --create --gzip --file "${package_path}" "${package_name}"
           fi
 
-          echo "package_path=${RUNNER_TEMP}/${package_name}.${{ matrix.archive_format }}" >> "${GITHUB_OUTPUT}"
+          # Recorded on every release, because the sizes are otherwise known only
+          # for macOS x86_64, measured locally; ADR 0010's 100-150 MB per platform
+          # was an estimate made before any archive existed.
+          uncompressed_kibibytes="$(du -sk "${package_name}" | cut -f 1)"
+          archive_bytes="$(wc -c < "${package_path}" | tr -d '[:space:]')"
+          {
+            echo "### ${package_name}.${ARCHIVE_FORMAT}"
+            echo ""
+            echo "- Installed tree: ${uncompressed_kibibytes} KiB"
+            echo "- Archive: ${archive_bytes} bytes"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          echo "package_path=${package_path}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload the platform archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -83,6 +83,7 @@
 #include <utility>
 #include <vector>
 
+#include <context/project_context_builder.h>
 #include <daw/alias_store.h>
 #include <daw/object_resolver.h>
 #include <daw/render_coordinator.h>
@@ -1008,6 +1009,32 @@ namespace sesh_ai::entry {
 		std::optional<ui::InboundBridgeMessageProblem> last_message_problem_;
 		std::optional<transport::ConfirmationDecisionOutcome> last_decision_outcome_;
 	};
+
+	// ---------------------------------------------------------------------------
+	// Structural roles for the Object Resolver (task 30.1, requirements 6.6, 7.2, 18.3)
+	// ---------------------------------------------------------------------------
+
+	// The reader `daw::ReaperTrackListSource` takes, bound to the source the Project
+	// Context Builder reads.
+	//
+	// It reads the project afresh through `project_context_source` and derives roles
+	// with `build_project_context_snapshot`, which is exactly what the builder does to
+	// publish a snapshot. So for the same project state the resolver's role for a
+	// track equals the role the snapshot reports for it, by construction: one reader of
+	// the routing signals, one derivation over them. `extension_composition.cpp`
+	// records why this wiring rather than one into the builder, and why the read is at
+	// call time rather than from the last snapshot.
+	//
+	// `project_context_source` is held by reference and must outlive the returned
+	// reader. In the extension both are members of one object, the source declared
+	// first.
+	inline daw::ReaperTrackListSource::StructuralRoleReader bind_structural_role_reader(
+		context::ProjectContextSource& project_context_source)
+	{
+		return [&project_context_source]() {
+			return context::read_track_structural_roles(project_context_source);
+		};
+	}
 
 	// ---------------------------------------------------------------------------
 	// The graph

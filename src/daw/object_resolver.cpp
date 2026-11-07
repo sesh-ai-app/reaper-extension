@@ -205,10 +205,10 @@ namespace sesh_ai::daw
 	ReaperTrackListSource::ReaperTrackListSource(
 		reaper_plugin_info_t* plugin_info,
 		ReaProject* project,
-		StructuralRoleProvider structural_role_provider)
+		StructuralRoleReader structural_role_reader)
 		: api_{std::make_unique<reaper_track_list_api>()}
 		, project_{project}
-		, structural_role_provider_{std::move(structural_role_provider)}
+		, structural_role_reader_{std::move(structural_role_reader)}
 	{
 		if (plugin_info == nullptr || plugin_info->GetFunc == nullptr)
 		{
@@ -266,11 +266,6 @@ namespace sesh_ai::daw
 			resolvable.project_index = track_index;
 			resolvable.is_master_track = false;
 
-			if (structural_role_provider_ && !resolvable.guid.empty())
-			{
-				resolvable.structural_role = structural_role_provider_(resolvable.guid);
-			}
-
 			tracks.push_back(std::move(resolvable));
 		}
 
@@ -294,6 +289,11 @@ namespace sesh_ai::daw
 
 				tracks.push_back(std::move(resolvable));
 			}
+		}
+
+		if (structural_role_reader_)
+		{
+			assign_structural_roles(tracks, structural_role_reader_());
 		}
 
 		return tracks;

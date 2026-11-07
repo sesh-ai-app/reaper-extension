@@ -992,6 +992,58 @@ namespace sesh_ai::context
 	}
 
 	// ---------------------------------------------------------------------------
+	// Roles for the Object Resolver (requirement 7.2, task 30.1)
+	// ---------------------------------------------------------------------------
+
+	// Every role a snapshot reports, the master's included, keyed by GUID.
+	//
+	// Reads the roles off a built snapshot rather than deriving them a second way,
+	// because the snapshot is what the agent reads roles from before addressing a
+	// track by one. A track the snapshot left out for an unusable GUID is absent here
+	// too, so the resolver cannot answer to a role the agent was never told about.
+	inline TrackStructuralRoles track_structural_roles_reported_by(const ProjectContextSnapshot& snapshot)
+	{
+		TrackStructuralRoles roles;
+		roles.reserve(snapshot.tracks.size() + 1);
+
+		for (const SnapshotTrack& track : snapshot.tracks)
+		{
+			roles.push_back(TrackStructuralRole{track.guid, track.role});
+		}
+
+		if (snapshot.master_track.present)
+		{
+			roles.push_back(TrackStructuralRole{snapshot.master_track.guid, snapshot.master_track.role});
+		}
+
+		return roles;
+	}
+
+	// The roles a snapshot taken now would report.
+	//
+	// The same two steps `ProjectContextBuilder::publish` takes — one read through the
+	// source, then `build_project_context_snapshot` — so for the same project state the
+	// resolver and the snapshot agree by construction rather than by two derivations
+	// kept in step. Nothing is published, nothing is retained, and the debounce is not
+	// touched: this is a read, and a tool call making it must not change when the next
+	// snapshot goes out.
+	//
+	// An unreadable project yields no roles, which makes every track invisible to the
+	// role source. That is the refusing direction: a role pattern comes back
+	// `unresolved_track_selector` rather than matching a role nobody derived.
+	inline TrackStructuralRoles read_track_structural_roles(ProjectContextSource& source)
+	{
+		const ProjectContextReading reading = source.read_project_context();
+
+		if (!reading.readable)
+		{
+			return {};
+		}
+
+		return track_structural_roles_reported_by(build_project_context_snapshot(reading));
+	}
+
+	// ---------------------------------------------------------------------------
 	// Diagnostics
 	// ---------------------------------------------------------------------------
 

@@ -29,7 +29,7 @@
 // text into a document, which is the one call into nlohmann/json on the bridge path.
 //
 // ---------------------------------------------------------------------------
-// The nine adapters, and the one that is deliberately left unwired
+// The nine adapters
 //
 // Every REAPER-backed adapter in this tree takes `reaper_plugin_info_t*` and resolves
 // its own function pointers through the registration table's `GetFunc`, so constructing
@@ -38,14 +38,49 @@
 // `unresolved_function_names`, which is a gap a log line can name rather than a null
 // call inside a producer's session.
 //
-// `ReaperTrackListSource`'s optional `StructuralRoleProvider` is left unset. Requirement
-// 6.6 derives structural roles in the Project Context Builder, and wiring the resolver
-// to read them back would close a cycle: the builder is a member of the graph and the
-// track list source is one of the graph's inputs. The header's own default is the
-// conservative answer and is what it documents — a resolver with no role provider
-// refuses a role selector rather than answering it wrongly — so a producer saying "the
-// drum bus" gets an unresolved selector instead of the wrong track. That is a gap, named
-// here, not a silent one.
+// ---------------------------------------------------------------------------
+// Where the resolver's structural roles come from (task 30.1)
+//
+// Requirement 7.2 makes Structural_Role the resolver's third source, and requirement 6.6
+// has the Project Context Builder deriving roles. Asking the builder for them would be
+// a cycle: the builder is a member of the graph, and the track list source is one of
+// the graph's inputs, constructed before it.
+//
+// The cycle is avoided by not going through the builder at all. The builder owns no
+// part of the derivation. It reads the project through `project_context_source_` and
+// hands the reading to `build_project_context_snapshot`, and requirement 18.3 makes the
+// role a pure function of what that reading carries. `project_context_source_` is an
+// input to the graph like the track list source, so the track list source's
+// structural role reader takes it by reference and makes the same two calls
+// (`bind_structural_role_reader` in `extension_composition.h`). Both inputs exist
+// before the graph does, and neither refers to the graph.
+//
+// Two alternatives were rejected. Binding a reader into the builder after the graph is
+// built would work, but it needs a lifetime argument for the window before binding and
+// gains nothing. A second reader of the routing signals, in the track list source or a
+// tool host, could drift from the context source's, and then the resolver and the
+// snapshot would disagree about a track's role. Here there is one reader and one
+// derivation, so they cannot disagree about the same project state.
+// `tests/entry/structural_role_wiring_test.cpp` asserts that agreement against the
+// snapshot the builder publishes.
+//
+// The roles are read when the resolver runs, during the tool call, rather than taken
+// from the last snapshot. Names and aliases are read at call time, and taking roles
+// from a snapshot that is a debounce interval old would match a role against a track
+// list that may since have changed. "The submix" after the producer re-routed would
+// then resolve to the track that used to be one. At call time the role is the one a
+// snapshot taken at that moment would report. If the server's snapshot is older and
+// the routing has changed since, the debounced snapshot that follows reports the same
+// role the resolver used. The cost is one project read per tool call. That is the
+// same read a snapshot makes, on the main thread, where the tool call already runs
+// (requirement 22.3).
+//
+// So the claim is precise: for the same project state, the role the resolver matches
+// for a track is the role the snapshot reports for it. The two walks are joined on
+// GUID. The context source reads `GUID` through `GetSetMediaTrackInfo_String`, and the
+// track list source formats `GetTrackGUID` with `guidToString`. Both produce REAPER's
+// braced form, and the join ignores case. If REAPER spelled them differently, the
+// track would carry no role and a role pattern would be refused, not misdirected.
 
 #include <entry/composed_extension.h>
 
@@ -149,8 +184,12 @@ namespace sesh_ai::entry {
 				alias_storage_{dependencies.plugin_info, active_project},
 				alias_store_{alias_storage_},
 				learned_aliases_{alias_store_},
-				track_list_{dependencies.plugin_info, active_project},
 				project_context_source_{dependencies.plugin_info, active_project},
+				track_list_{
+					dependencies.plugin_info,
+					active_project,
+					bind_structural_role_reader(project_context_source_)
+				},
 				transport_actions_{dependencies.plugin_info},
 				graph_{
 					build_graph_dependencies(std::move(dependencies)),
@@ -256,8 +295,13 @@ namespace sesh_ai::entry {
 			daw::StoredAliasLookup learned_aliases_;
 
 			// ---- the three sources the graph reads rather than registers over ----
-			daw::ReaperTrackListSource track_list_;
+			//
+			// The context source before the track list source, because the track list
+			// source's structural role reader holds it by reference. Destroyed after it,
+			// so the reader can never reach a source that is gone. The graph is
+			// destroyed before either, so no tool call can be running when they go.
 			context::ReaperProjectContextSource project_context_source_;
+			daw::ReaperTrackListSource track_list_;
 			transport::ReaperTransportActionInvoker transport_actions_;
 
 			// Last, because it holds every one of the above by reference.

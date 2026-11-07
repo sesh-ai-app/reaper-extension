@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	The Info.plist of each CEF helper bundle (task 26.2, requirement 15.7), configured once
+	per bundle by CMakeLists.txt's "The macOS helper bundles".
+
+	CEF's tests/cefsimple/mac/helper-Info.plist.in at the pinned commit (g564dd6c), key for
+	key, with three values changed: the bundle identifier is this project's, the version is
+	the project's, and LSMinimumSystemVersion is the declared macOS floor (ADR 0023) rather
+	than cefsimple's 12.0. MallocNanoZone, LSUIElement and the rest are kept as cefsimple
+	has them.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>@SESH_AI_CEF_HELPER_EXECUTABLE_NAME@</string>
+	<key>CFBundleExecutable</key>
+	<string>@SESH_AI_CEF_HELPER_EXECUTABLE_NAME@</string>
+	<key>CFBundleIdentifier</key>
+	<string>@SESH_AI_CEF_HELPER_BUNDLE_IDENTIFIER@</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>@SESH_AI_CEF_HELPER_EXECUTABLE_NAME@</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>@PROJECT_VERSION@</string>
+	<key>CFBundleShortVersionString</key>
+	<string>@PROJECT_VERSION@</string>
+	<key>LSEnvironment</key>
+	<dict>
+		<key>MallocNanoZone</key>
+		<string>0</string>
+	</dict>
+	<key>LSFileQuarantineEnabled</key>
+	<true/>
+	<key>LSMinimumSystemVersion</key>
+	<string>@CMAKE_OSX_DEPLOYMENT_TARGET@</string>
+	<key>LSUIElement</key>
+	<string>1</string>
+	<key>NSSupportsAutomaticGraphicsSwitching</key>
+	<true/>
+</dict>
+</plist>

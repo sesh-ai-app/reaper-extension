@@ -567,8 +567,9 @@ namespace sesh_ai::ui {
 
 	// Wraps `value` as a JavaScript single-quoted string literal, escaped.
 	//
-	// CEF's own browser-to-renderer message channel needs a `CefRenderProcessHandler`,
-	// which lives in the helper executable — a target that does not exist yet — so the
+	// CEF's own browser-to-renderer message channel would need the helper's
+	// `CefRenderProcessHandler` to receive the message and call into the page, and that
+	// handler only installs the send half (`ui/renderer_bridge_binding.h`), so the
 	// adapter delivers a payload by evaluating a call in the frame. That puts the
 	// payload inside JavaScript source, and the payload carries agent-authored
 	// conversation text: a quote, a backslash, a newline, or a `</script>` in it would
@@ -1203,19 +1204,38 @@ namespace sesh_ai::ui {
 		// looks enabled and is not.
 		bool process_sandbox_enabled = false;
 
-		// macOS. The helper processes are separate `.app` bundles inside the extension
-		// bundle and each one carries its own code signature — a single signature over
-		// the outer bundle is not enough, and an unsigned helper fails to launch under
+		// macOS. The helper processes are separate `.app` bundles beside the extension
+		// binary, and each one carries its own code signature. There is no outer bundle
+		// whose signature could cover them, and an unsigned helper fails to launch under
 		// Gatekeeper with no diagnostic the producer can act on.
+		//
+		// Chromium finds the four suffixed ones itself. It takes
+		// `browser_subprocess_path`, goes four directories up from the executable, and
+		// appends the suffix to the bundle and executable names
+		// (`ChildProcessHost::GetChildPath` in content/browser/child_process_host_impl.cc
+		// at Chromium 154.0.8037.58). So these names are fixed by the first one.
 		bool helper_processes_require_individual_code_signatures = false;
 		std::vector<std::string> helper_process_bundle_names;
 
-		// macOS. Embedded in the extension bundle and loaded through `@rpath`.
+		// macOS. Beside the extension binary, and loaded at run time with
+		// `cef_load_library` rather than linked: a linked framework would be looked for
+		// relative to REAPER's executable. `entry/cef_framework_location.h` resolves it.
 		std::string framework_bundle_name;
 
+		// macOS. The bundle CEF is told is the application's own (`main_bundle_path`).
+		// The plain helper bundle, because CEF derives Chromium's base bundle identifier
+		// from it, and the browser process and every helper have to agree on that
+		// identifier to find each other's Mach services. Left to CEF, the browser would
+		// take REAPER's bundle and each helper its own. Why this bundle and not REAPER's
+		// is in `entry/cef_framework_location.h`.
+		std::string main_bundle_name;
+
 		// Windows. The loader has to sit beside `reaper_sesh_ai.dll` in REAPER's
-		// `UserPlugins` directory; a `libcef.dll` anywhere else is not found and the
-		// extension fails to load rather than failing to show a panel.
+		// `UserPlugins` directory. It is delay-loaded and then loaded by that full path
+		// before the first CEF call (`ui/cef_library_loading.h`), because an imported
+		// `libcef.dll` would be looked for in REAPER's search path and the extension
+		// would fail to load. Missing, it is reported and the panel stays empty.
+		// `entry/cef_framework_location.h` resolves it.
 		bool loader_must_sit_beside_extension_binary = false;
 		std::string loader_file_name;
 
@@ -1242,6 +1262,7 @@ namespace sesh_ai::ui {
 				"Sesh AI Helper (Renderer).app"
 			};
 			configuration.framework_bundle_name = "Chromium Embedded Framework.framework";
+			configuration.main_bundle_name = "Sesh AI Helper.app";
 			configuration.subprocess_executable_name =
 				"Sesh AI Helper.app/Contents/MacOS/Sesh AI Helper";
 			configuration.process_sandbox_enabled = true;

@@ -23,16 +23,17 @@
 // ---------------------------------------------------------------------------
 // What this does not do
 //
-// It does not dock the window. Task 25.2 hands `native_window()` to the panel
-// registration — `LoadedExtension::register_panel_window` in `entry/plugin_entry.cpp`,
-// which `DockWindowAddEx` sits behind — and to the `PanelBrowserCreator`.
+// It does not dock the window. `DockablePanel::open` (`entry/dockable_panel.h`) hands
+// `native_window()` to the registration set, which `DockWindowAddEx` sits behind, and
+// to `PluginEntry::open_panel`, which hands it to the `PanelBrowserCreator`.
 //
 // Nor does it decide when the window is destroyed relative to the rest of teardown.
-// A docked window has to leave REAPER's docker before it is destroyed, and the
-// registration set releases the dock at the very end of `plugin_entry.h`'s sequence,
-// after CEF has shut down. Where a `PanelWindow` sits among `LoadedExtension`'s members
-// is therefore 25.2's decision. The destructor here is a backstop, the same way the
-// member order in `LoadedExtension` is, not the mechanism.
+// `DockablePanel::destroy_window` does, at the end of `plugin_entry.h`'s exit step:
+// after CEF has shut down at step three and after the registration set has undocked
+// the window. `LoadedExtension` declares the `PanelWindow` before the registration set,
+// the graph, and the browser host, so its destructor — the backstop here, the same way
+// the member order in `LoadedExtension` is, not the mechanism — also runs after all
+// three.
 
 #ifndef SESH_AI_ENTRY_PANEL_WINDOW_H
 #define SESH_AI_ENTRY_PANEL_WINDOW_H
@@ -168,8 +169,8 @@ namespace sesh_ai::entry {
 		// the destructor can both call it.
 		//
 		// The handle is cleared before the platform is called, so a re-entrant call —
-		// `DestroyWindow` sends `WM_DESTROY` synchronously, and 25.2's dialog procedure
-		// may answer it — finds nothing left to destroy.
+		// `DestroyWindow` sends `WM_DESTROY` synchronously, and a dialog procedure may
+		// answer it — finds nothing left to destroy.
 		void destroy()
 		{
 			if (native_window_ == nullptr) {

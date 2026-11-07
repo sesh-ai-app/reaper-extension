@@ -38,10 +38,10 @@
 //
 // Nor the panel window or the browser. `make_panel_browser_creator`
 // (`entry/panel_browser_creator.h`) takes the UI Host and the deferred browser host,
-// both of which this exposes — but it also needs the panel's `HWND` and the resolved
-// asset directory. Task 25.1 made the window creatable (`entry/panel_window.h`);
-// creating it and resolving the directory are task 25.2's. So the creator is installed
-// by whoever has those, over the two references below.
+// both of which this exposes, and the asset directory, which this does not know. The
+// plugin entry installs the creator over the two references below, with the directory
+// it found beside the binary (`entry/panel_asset_directory.h`), and owns the window
+// the creator is later handed (`entry/dockable_panel.h`).
 
 #ifndef SESH_AI_ENTRY_COMPOSED_EXTENSION_H
 #define SESH_AI_ENTRY_COMPOSED_EXTENSION_H

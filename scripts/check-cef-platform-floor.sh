@@ -35,14 +35,11 @@
 # load failure.
 #
 # ---------------------------------------------------------------------------
-# Unverified
+# Failing rather than passing
 #
-# None of this has run. There is no CEF distribution on any development machine
-# here, which is the same reason the CEF arm of CMakeLists.txt is unexercised, so
-# the first CEF leg in CI is the first time these commands meet a real framework.
-# Written defensively for that reason: a missing distribution, a missing binary,
-# or a missing tool is a failure with an explanation, never a pass. A check that
-# quietly succeeds is worse than no check, because it is also evidence.
+# A missing distribution, a missing binary, or a missing tool is a failure with an
+# explanation, never a pass. A check that quietly succeeds is worse than no check,
+# because it is also evidence.
 #
 #   ./scripts/check-cef-platform-floor.sh
 
@@ -122,8 +119,8 @@ cef_vendor_directory="third_party/cef"
 if [ ! -d "${cef_vendor_directory}" ]; then
 	fail \
 		"no ${cef_vendor_directory} directory, so no CEF distribution to inspect." \
-		"This script belongs on a build leg configured with -DSESH_AI_DOWNLOAD_CEF=ON." \
-		"Running it on a CEF-less leg is a workflow mistake rather than a passing check."
+		"Configuring the shared library downloads it there, unless -DSESH_AI_CEF_ROOT points" \
+		"elsewhere. Run this after configuring with the default download, not before."
 fi
 
 cef_root_match_count="$(
@@ -307,9 +304,10 @@ case "$(uname -s)" in
 		# because the two can diverge: CEF could be within the floor while the
 		# runner's own toolchain linked the extension against something newer,
 		# which is precisely the "compatibility tracks the image" failure the
-		# floors exist to stop. Skipped rather than failed when the library was
-		# not built, since the CEF-less legs do not produce one and this script
-		# does not run on them anyway.
+		# floors exist to stop. Skipped rather than failed when there is no
+		# library under build/bin, which is what running this before the build,
+		# or against a build directory with another name, looks like. CI and the
+		# release workflow run it after building into build/.
 		extension_library="$(
 			find build/bin -type f -name 'reaper_sesh_ai.so' 2> /dev/null \
 				| head -n 1
